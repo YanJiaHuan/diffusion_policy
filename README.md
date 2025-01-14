@@ -435,3 +435,19 @@ This repository is released under the MIT license. See [LICENSE](LICENSE) for ad
 * The [Block Pushing](./diffusion_policy/env/block_pushing) task is adapted from [BET](https://github.com/notmahi/bet) and [IBC](https://github.com/google-research/ibc).
 * The [Kitchen](./diffusion_policy/env/kitchen) task is adapted from [BET](https://github.com/notmahi/bet) and [Relay Policy Learning](https://github.com/google-research/relay-policy-learning).
 * Our [shared_memory](./diffusion_policy/shared_memory) data structures are heavily inspired by [shared-ndarray2](https://gitlab.com/osu-nrsg/shared-ndarray2).
+
+
+## Customized by JH
+这是一个基于原本DP代码仓库，往国产Piper机械臂做代码适配的临时代码仓库，但是会系统记录主要的代码变动以及使用方法
+
+1. 安装realsense
+```shell
+git clone https://github.com/IntelRealSense/librealsense.git
+cd librealsense
+mkdir build
+cd build
+cmake .. -DBUILD_EXAMPLES=true
+make
+sudo make install
+```
+安装好后可以通过在终端输入`realsense-viewer`来检查，注意intel realsense 需要USB3.0，否则会卡顿
