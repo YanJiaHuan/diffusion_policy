@@ -451,3 +451,27 @@ make
 sudo make install
 ```
 安装好后可以通过在终端输入`realsense-viewer`来检查，注意intel realsense 需要USB3.0，否则会卡顿
+
+2. 安装piper sdk
+原来dp的项目用的是ur5，是用ip通信的，所以他们的启动代码类似`python eval_real_robot.py -i data/outputs/blah/checkpoints/latest.ckpt -o data/eval_pusht_real --robot_ip 192.168.0.204`, 而松灵的piper 机械臂，要么使用python sdk,要么使用 ros，这个项目考虑使用python sdk.
+```shell
+# 安装piper sdk
+pip3 install python-can
+pip3 install piper_sdk
+# 安装can工具
+sudo apt update && sudo apt install can-utils ethtool
+```
+
+3. 改动的代码
+* rtde_interpolation_controller.py -> piper_controller.py
+DP原作者用了一个controller作为模型输出action，到机械臂驱动action的中间层，但是这个controller需要两个interface，是对UR系列机械臂支持的，但是考虑到不支持piper 机械臂，所以尝试customize 一个controller, 尽量保证功能和函数和之前接近，从而可以在real_env里直接使用它
+
+4. 使用方法
+
+* 连接机械臂
+```shell
+cd /home/zcai/jh_workspace/piper_sdk 
+bash can_activate.sh can0 1000000
+sudo ethtool -i can0 | grep bus
+bash can_activate.sh can_piper 1000000 "1-5.4:1.0"
+```

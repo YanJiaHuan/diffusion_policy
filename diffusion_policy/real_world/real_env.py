@@ -6,6 +6,7 @@ import shutil
 import math
 from multiprocessing.managers import SharedMemoryManager
 from diffusion_policy.real_world.rtde_interpolation_controller import RTDEInterpolationController
+from diffusion_policy.real_world.piper_controller import PiperInterpolationController
 from diffusion_policy.real_world.multi_realsense import MultiRealsense, SingleRealsense
 from diffusion_policy.real_world.video_recorder import VideoRecorder
 from diffusion_policy.common.timestamp_accumulator import (
@@ -433,3 +434,174 @@ class RealEnv:
             shutil.rmtree(str(this_video_dir))
         print(f'Episode {episode_id} dropped!')
 
+
+
+class PiperRealEnv(RealEnv):
+    def __init__(self, 
+                 output_dir,
+                 can_interface="can0",
+                 frequency=10,
+                 n_obs_steps=2,
+                 obs_image_resolution=(640, 480),
+                 max_obs_buffer_size=30,
+                 camera_serial_numbers=None,
+                 obs_key_map=DEFAULT_OBS_KEY_MAP,
+                 obs_float32=False,
+                 max_pos_speed=0.25,
+                 max_rot_speed=0.6,
+                 tcp_offset=0.13,
+                 init_joints=False,
+                 video_capture_fps=30,
+                 video_capture_resolution=(1280, 720),
+                 record_raw_video=True,
+                 thread_per_video=2,
+                 video_crf=21,
+                 enable_multi_cam_vis=True,
+                 multi_cam_vis_resolution=(1280, 720),
+                 shm_manager=None):
+        
+        # Initialize the parent RealEnv but replace the robot controller with PiperController
+        super().__init__(
+            output_dir=output_dir,
+            robot_ip=None,  # Not required for Piper
+            frequency=frequency,
+            n_obs_steps=n_obs_steps,
+            obs_image_resolution=obs_image_resolution,
+            max_obs_buffer_size=max_obs_buffer_size,
+            camera_serial_numbers=camera_serial_numbers,
+            obs_key_map=obs_key_map,
+            obs_float32=obs_float32,
+            max_pos_speed=max_pos_speed,
+            max_rot_speed=max_rot_speed,
+            tcp_offset=tcp_offset,
+            init_joints=init_joints,
+            video_capture_fps=video_capture_fps,
+            video_capture_resolution=video_capture_resolution,
+            record_raw_video=record_raw_video,
+            thread_per_video=thread_per_video,
+            video_crf=video_crf,
+            enable_multi_cam_vis=enable_multi_cam_vis,
+            multi_cam_vis_resolution=multi_cam_vis_resolution,
+            shm_manager=shm_manager
+        )
+
+        # Replace RTDE robot controller with PiperController
+        self.robot = PiperController(
+            can_interface=can_interface,
+            frequency=100,  # Adjusted frequency for Piper
+            launch_timeout=3,
+            tcp_offset_pose=[0, 0, tcp_offset, 0, 0, 0],
+            verbose=True,
+            get_max_k=max_obs_buffer_size
+        )
+
+    def get_obs(self) -> dict:
+        """
+        Get observation from Realsense cameras and Piper arm (preserves original logic).
+        """
+        assert self.is_ready
+
+        # === Get Realsense camera data ===
+        k = math.ceil(self.n_obs_steps * (self.video_capture_fps / self.frequency))
+        self.last_realsense_data = self.realsense.get(
+            k=k, 
+            out=self.last_realsense_data
+        )
+
+        # === Get Piper robot data ===
+        last_robot_data = self.robot.get_all_state()
+
+        # === Align camera timestamps ===
+        dt = 1 / self.frequency
+        last_timestamp = np.max([x['timestamp'][-1] for x in self.last_realsense_data.values()])
+        obs_align_timestamps = last_timestamp - (np.arange(self.n_obs_steps)[::-1] * dt)
+
+        # === Camera observation alignment ===
+        camera_obs = dict()
+        for camera_idx, value in self.last_realsense_data.items():
+            this_timestamps = value['timestamp']
+            this_idxs = []
+            for t in obs_align_timestamps:
+                is_before_idxs = np.nonzero(this_timestamps < t)[0]
+                this_idx = is_before_idxs[-1] if len(is_before_idxs) > 0 else 0
+                this_idxs.append(this_idx)
+            camera_obs[f'camera_{camera_idx}'] = value['color'][this_idxs]
+
+        # === Align robot data timestamps ===
+        robot_timestamps = last_robot_data['robot_receive_timestamp']
+        this_idxs = []
+        for t in obs_align_timestamps:
+            is_before_idxs = np.nonzero(robot_timestamps < t)[0]
+            this_idx = is_before_idxs[-1] if len(is_before_idxs) > 0 else 0
+            this_idxs.append(this_idx)
+
+        # === Map robot data to observation keys ===
+        robot_obs_raw = {
+            self.obs_key_map[k]: v for k, v in last_robot_data.items() if k in self.obs_key_map
+        }
+        
+        robot_obs = {k: v[this_idxs] for k, v in robot_obs_raw.items()}
+
+        # === Accumulate observations ===
+        if self.obs_accumulator is not None:
+            self.obs_accumulator.put(robot_obs_raw, robot_timestamps)
+
+        # === Combine camera and robot observations ===
+        obs_data = dict(camera_obs)
+        obs_data.update(robot_obs)
+        obs_data['timestamp'] = obs_align_timestamps
+
+        return obs_data
+
+    def exec_actions(self, actions: np.ndarray, timestamps: np.ndarray, stages: Optional[np.ndarray] = None):
+        """
+        Execute pose and gripper actions for the Piper robot.
+        """
+        assert self.is_ready
+
+        if not isinstance(actions, np.ndarray):
+            actions = np.array(actions)
+        if not isinstance(timestamps, np.ndarray):
+            timestamps = np.array(timestamps)
+        if stages is None:
+            stages = np.zeros_like(timestamps, dtype=np.int64)
+
+        # Execute action for each timestamp
+        for i in range(len(actions)):
+            pose_action = actions[i, :6]  # End-effector pose
+            gripper_action = actions[i, 6]  # Gripper control
+
+            # Send pose command
+            self.robot.schedule_waypoint(pose=pose_action, target_time=timestamps[i])
+
+            # Send gripper command
+            self.robot.control_gripper(gripper_action)
+
+        # Record actions
+        if self.action_accumulator is not None:
+            self.action_accumulator.put(actions, timestamps)
+        if self.stage_accumulator is not None:
+            self.stage_accumulator.put(stages, timestamps)
+
+    def start(self, wait=True):
+        """
+        Start Piper robot and cameras.
+        """
+        self.robot.start(wait=False)
+        self.realsense.start(wait=False)
+        if self.multi_cam_vis is not None:
+            self.multi_cam_vis.start(wait=False)
+        if wait:
+            self.start_wait()
+
+    def stop(self, wait=True):
+        """
+        Stop Piper robot and cameras.
+        """
+        self.end_episode()
+        if self.multi_cam_vis is not None:
+            self.multi_cam_vis.stop(wait=False)
+        self.robot.stop(wait=False)
+        self.realsense.stop(wait=False)
+        if wait:
+            self.stop_wait()
