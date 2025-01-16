@@ -22,50 +22,51 @@ import click
 import cv2
 import numpy as np
 import scipy.spatial.transform as st
-from diffusion_policy.real_world.real_env import RealEnv
+from diffusion_policy.real_world.real_env import PiperRealEnv
 # from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
 from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.keystroke_counter import (
     KeystrokeCounter, Key, KeyCode
 )
-from my_mouse import MouseTracker
-from client import Client
+from diffusion_policy.encapsulated_oculusReader.oculus_reader import OculusReader
+from diffusion_policy.encapsulated_oculusReader.oculus_data import OculusHandler
+from scipy.spatial.transform import Rotation as R
+
 import math
 
 @click.command()
-@click.option('--output', '-o', default = 'data/my_dataset', help="Directory to save demonstration dataset.")
-@click.option('--robot_ip', '-ri', default = "localhost", help="UR5's IP address e.g. 192.168.0.204")
+@click.option('--output', '-o', default = 'data/test', help="Directory to save demonstration dataset.")
+@click.option('--can_interface', '-c', default='can_piper', help="CAN interface to use.")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
-@click.option('--init_joints', '-j', is_flag=True, default=False, help="Whether to initialize robot joint configuration in the beginning.")
-@click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
+@click.option('--reset', '-r', is_flag=True, default=True, help="Whether to initialize robot joint configuration in the beginning.")
+@click.option('--frequency', '-f', default=30, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SapceMouse command to executing on Robot in Sec.")
-def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_latency):
-    dt = 1/frequency
-    robo_client = Client(server_host=robot_ip,server_port=12345) #"192.168.0.30"
-    robo_client.connect()
-    time.sleep(1.0)
-    tracker = MouseTracker()
-    max_speed  =20000
-    max_speed_per_sec = (max_speed/60)/1000
-    used_speed = 0
+def main(output, can_interface, vis_camera_idx, reset, frequency, command_latency):
 
-    #Spacemouse(shm_manager=shm_manager) as sm, \
+    dt = 1/frequency
+    hz = 60
+    ocu_hz = hz
+    oculus_reader = OculusReader()
+    handler = OculusHandler(oculus_reader, right_controller=True, hz=ocu_hz, use_filter=False, max_threshold=0.6/ocu_hz)
+
+
     with SharedMemoryManager() as shm_manager:
         with KeystrokeCounter() as key_counter, \
-            RealEnv(
+            PiperRealEnv(
                 output_dir=output, 
-                myrobot=robo_client, 
+                can_interface = can_interface,
                 # recording resolution
                 obs_image_resolution=(1280,720),
                 frequency=frequency,
-                init_joints=init_joints,
+                n_obs_steps=2,
                 enable_multi_cam_vis=True,
                 record_raw_video=True,
                 # number of threads per camera view for video recording (H.264)
                 thread_per_video=3,
                 # video recording quality, lower is better (but slower).
                 video_crf=21,
-                shm_manager=shm_manager
+                shm_manager=shm_manager,
+                reset = reset
             ) as env:
             cv2.setNumThreads(1)
 
@@ -73,28 +74,27 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
             env.realsense.set_exposure(exposure=120, gain=0)
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
-# ----------------------------------------------------------------------------------------------------------
-            print('Ready!')
-            state = env.get_robot_state()           
-            #target_pose = state['TargetTCPPose']
-            target_pose = state
+
+            time.sleep(1.0)
+
+
+            state = env.get_robot_state()
+            print("now robot state is",state)
+            target_pose = state['ActualTCPPose']
+            print(target_pose)
             t_start = time.monotonic()
             iter_idx = 0
             stop = False
             is_recording = False
-            time.sleep(1)
-            while not robo_client.is_data_ready:
-                print("waiting data ready")
-                time.sleep(1)
-
             while not stop:
                 # calculate timing
                 t_cycle_end = t_start + (iter_idx + 1) * dt
                 t_sample = t_cycle_end - command_latency
                 t_command_target = t_cycle_end + dt
-#--------------------------------------------------------------------------------------------------------------
+
                 # pump obs
-                obs = env.get_obs()        
+                obs = env.get_obs()
+
                 # handle key presses
                 press_events = key_counter.get_press_events()
                 for key_stroke in press_events:
@@ -137,46 +137,64 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                     thickness=2,
                     color=(255,255,255)
                 )
+
                 cv2.imshow('default', vis_img)
                 cv2.pollKey()
-#--------------------------------------------------------------------------------------------------------------
+
                 precise_wait(t_sample)
                 # get teleop command
-                # sm_state = sm.get_motion_state_transformed()
-                # # print(sm_state)
-                # dpos = sm_state[:3] * (env.max_pos_speed / frequency)
-                # drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
-                
-                # if not sm.is_button_pressed(0):
-                #     # translation mode
-                #     drot_xyz[:] = 0
-                # else:
-                #     dpos[:] = 0
-                # if not sm.is_button_pressed(1):
-                #     # 2D translation mode
-                #     dpos[2] = 0    
+                increment = handler.get_increment()
+                buttons = handler.get_buttons()
+                original_orientation = handler.get_original_orientation()
+                #-----------------旋转矩阵转欧拉角---------------------
+                r = R.from_matrix(original_orientation)
+                euler_angles = r.as_euler('xyz', degrees=True)
+                rpy_vr = np.array(np.mod(euler_angles + 180, 360) - 180)
+                #---------------------------------------------------
+                A_button = buttons.get("A", [0])
+                B_button = buttons.get("B", [0])
+                right_trigger = buttons.get("rightTrig", [0])[0]
+                delta_pos = increment['position']
+                # buttons, position, speed, acc = iter
+                right_trigger = buttons.get("rightTrig", [0])[0]
+                # 判断是否按下A键，按下A，机械臂允许移动
+                #---------------------------------------------------
+                if not A_button:
+                    freeze = False
+                else:
+                    freeze = True
+                #----------------------------------------------------
+                #------------------更新endpose状态---------------------
+                #获得当前机械臂状态
+                target_pose = env.get_robot_state()['ActualTCPPose']
+                print("target_pose",target_pose)
+                #Scale机械臂位置信息，0.001mm->m, 0.001度->度
+                target_pose[0] = target_pose[0] / 1000000
+                target_pose[1] = target_pose[1] / 1000000
+                target_pose[2] = target_pose[2] / 1000000
+                target_pose[3] = target_pose[3] / 1000
+                target_pose[4] = target_pose[4] / 1000
+                target_pose[5] = target_pose[5] / 1000
+                if freeze:
+                    pass
+                else:
+                    print("target_pose",target_pose)
 
-                # drot = st.Rotation.from_euler('xyz', drot_xyz)
-                # target_pose[:3] += dpos
-                # target_pose[3:] = (drot * st.Rotation.from_rotvec(
-                #     target_pose[3:])).as_rotvec()
-                dpose = tracker.get_latest_increment()
-                #print("dpose:",dpose)
-                if tracker.is_left_button_pressed():
-                    dpose = np.array([0,0,0,0,0,0])
-                target_pose += dpose*(max_speed_per_sec/(frequency))
-                sqrt_scalar = math.sqrt((dpose[0]*dpose[0]+dpose[1]*dpose[1])/2)
-                used_speed = (sqrt_scalar) * (max_speed*1.5)
-                if used_speed <=800:
-                    used_speed = 800
-
+                    target_pose[0] = target_pose[0] + delta_pos[0]*0.1
+                    target_pose[1] = target_pose[1] + delta_pos[1]*0.1
+                    target_pose[2] = target_pose[2] + delta_pos[2]*0.1
+                    # TODO: 目前VR的旋转是用绝对值，xyz是增量，其原因是VR的旋转增量没有调通
+                    target_pose[3] = np.deg2rad(rpy_vr[0])
+                    target_pose[4] = np.deg2rad(rpy_vr[1])
+                    target_pose[5] = np.deg2rad(rpy_vr[2])
+                #---------------------------------------------------
 
                 # execute teleop command
                 env.exec_actions(
-                    speed = used_speed,
                     actions=[target_pose], 
                     timestamps=[t_command_target-time.monotonic()+time.time()],
-                    stages=[stage])
+                    stages=[stage]
+                    )
                 precise_wait(t_cycle_end)
                 iter_idx += 1
 

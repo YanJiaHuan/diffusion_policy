@@ -36,6 +36,7 @@ class PiperInterpolationController(mp.Process):
                  payload_cog=None,
                  joints_init=None,
                  joints_init_speed=1,
+                 reset = True,
                  soft_real_time=False,
                  verbose=False,
                  receive_keys=None,
@@ -74,6 +75,7 @@ class PiperInterpolationController(mp.Process):
         self.joints_init_speed = joints_init_speed
         self.soft_real_time = soft_real_time
         self.verbose = verbose
+        self.reset = reset
 
         self.piper = C_PiperInterface(self.can_interface)
         # Input Queue
@@ -162,7 +164,6 @@ class PiperInterpolationController(mp.Process):
         assert self.is_alive()
         assert(duration >= (1/self.frequency))
         pose = np.array(pose)
-        pose[3:] = np.deg2rad(pose[3:])
         assert pose.shape == (6,)
 
         message = {
@@ -175,7 +176,6 @@ class PiperInterpolationController(mp.Process):
     def schedule_waypoint(self, pose, target_time):
         pose = np.array(pose)
             # Convert RX, RY, RZ to radians
-        pose[3:] = np.deg2rad(pose[3:])
         self.input_queue.put({
             'cmd': Command.SCHEDULE_WAYPOINT.value,
             'target_pose': pose,
@@ -248,6 +248,20 @@ class PiperInterpolationController(mp.Process):
             # init joints
             if self.joints_init is not None:
                 pass #TODO add init joints
+            if self.reset:
+                self.piper.MotionCtrl_2(0x01, 0x01, 30, 0x00) #角度控制模式
+                position = [-0.012, 0.607, -0.587, 0.091, 0.376, 0.524, 0.01]
+                factor = 57324.840764 #1000*180/3.14
+                joint_0 = round(position[0]*factor)
+                joint_1 = round(position[1]*factor)
+                joint_2 = round(position[2]*factor)
+                joint_3 = round(position[3]*factor)
+                joint_4 = round(position[4]*factor)
+                joint_5 = round(position[5]*factor)
+                self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
+                self.piper.MotionCtrl_2(0x01, 0x01, 30, 0x00)
+                print("[PiperController] Reset the robot.")
+                time.sleep(3)
                 
             # main loop
             dt = 1. / self.frequency
@@ -272,20 +286,21 @@ class PiperInterpolationController(mp.Process):
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
                 scaled_pose = [
-                    int(pose_command[0]*1000000),
+                    int(pose_command[0]*1000000), 
                     int(pose_command[1]*1000000),
                     int(pose_command[2]*1000000),
                     int(np.rad2deg(pose_command[3])*1000),
                     int(np.rad2deg(pose_command[4])*1000),
                     int(np.rad2deg(pose_command[5])*1000)
                 ]
+                # xyz的单位是mm，rpy的单位是度
                 self.piper.MotionCtrl_2(0x01, 0x00, int(self.max_pos_speed * 100),0x00)
                 self.piper.EndPoseCtrl(*scaled_pose)
                 # Maintain control loop frequency
                 time.sleep(max(0, (1 / self.frequency) - (time.monotonic() - t_now)))
                 # update robot state
                 state = {
-                    'ActualTCPPose': pose_command,
+                    'ActualTCPPose': scaled_pose,
                     'robot_receive_timestamp': time.time()
                 }
                 self.ring_buffer.put(state)
