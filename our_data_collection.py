@@ -56,6 +56,7 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
             PiperRealEnv(
                 output_dir=output, 
                 can_interface = can_interface,
+                magnet_controll = True,
                 # recording resolution
                 obs_image_resolution=(1280,720),
                 frequency=frequency,
@@ -176,7 +177,6 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 #------------------更新endpose状态---------------------
                 #获得当前机械臂状态
                 target_pose = env.get_robot_state()['ActualTCPPose']
-                print("target_pose",target_pose)
                 #Scale机械臂位置信息，0.001mm->m, 0.001度->度
                 target_pose[0] = target_pose[0] / 1000000
                 target_pose[1] = target_pose[1] / 1000000

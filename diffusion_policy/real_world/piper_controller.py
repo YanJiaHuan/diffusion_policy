@@ -8,6 +8,7 @@ from diffusion_policy.shared_memory.shared_memory_queue import SharedMemoryQueue
 from diffusion_policy.shared_memory.shared_memory_ring_buffer import SharedMemoryRingBuffer
 from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryInterpolator
 from piper_sdk import C_PiperInterface
+from diffusion_policy.real_world.esp32_magnet import BluetoothMagnetController
 
 # ============================== #
 #           COMMANDS             #
@@ -25,6 +26,7 @@ class PiperInterpolationController(mp.Process):
     def __init__(self,
                  shm_manager: SharedMemoryManager,
                  can_interface="can_piper",
+                 magnet_controll=True,  # Add magnet_controller as an argument
                  frequency=100,
                  lookahead_time=0.1,
                  gain=300,
@@ -78,6 +80,10 @@ class PiperInterpolationController(mp.Process):
         self.reset = reset
 
         self.piper = C_PiperInterface(self.can_interface)
+        if magnet_controll:
+            self.magnet_controller = BluetoothMagnetController(bt_port='/dev/rfcomm0', baud_rate=115200)
+        else:
+            assert False, "Magnet control is not enabled. Please enable it."
         # Input Queue
         example = {
             'cmd': Command.SERVOL.value,
@@ -90,25 +96,22 @@ class PiperInterpolationController(mp.Process):
             examples=example,
             buffer_size=256
         )
-        if receive_keys is None:
 
+
+        if receive_keys is None:
             receive_keys = [
                 'ActualTCPPose',
-                # 'ActualTCPSpeed',
-                # 'ActualQ',
-                # 'ActualQd',
-                # 'TargetTCPPose',
-                # 'TargetTCPSpeed',
-                # 'TargetQ',
-                # 'TargetQd'
+                'ActualMagnetState',  # Include the magnet state key here
             ]
 
         # build ring buffer
         # Ring Buffer for robot state
         example = {
             'ActualTCPPose': np.zeros((6,), dtype=np.float64),
-            'robot_receive_timestamp': time.time()
+            'robot_receive_timestamp': time.time(),
+            'ActualMagnetState': 0.0  # Initialize magnet state (False by default)
         }
+
         ring_buffer = SharedMemoryRingBuffer.create_from_examples(
             shm_manager=shm_manager,
             examples=example,
@@ -274,6 +277,11 @@ class PiperInterpolationController(mp.Process):
                 np.deg2rad(curr_pose_raw.end_pose.RY_axis/1000),
                 np.deg2rad(curr_pose_raw.end_pose.RZ_axis/1000)
             ]
+
+            # Capture the ESP32 Magnet State
+            magnet_state = self.magnet_controller.get_magnet_state()  # Get magnet state from BluetoothMagnetController
+
+
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
             pose_interp = PoseTrajectoryInterpolator(
@@ -301,7 +309,8 @@ class PiperInterpolationController(mp.Process):
                 # update robot state
                 state = {
                     'ActualTCPPose': scaled_pose,
-                    'robot_receive_timestamp': time.time()
+                    'robot_receive_timestamp': time.time(),
+                    'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }
                 self.ring_buffer.put(state)
                 # fetch command from queue

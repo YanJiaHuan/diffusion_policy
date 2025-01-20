@@ -440,6 +440,7 @@ class PiperRealEnv:
     def __init__(self, 
                  output_dir,
                  can_interface="can_piper",
+                 magnet_controll=True,
                  frequency=100,
                  n_obs_steps=2,
                  obs_image_resolution=(640, 480),
@@ -553,9 +554,17 @@ class PiperRealEnv:
         if not joint_init:
             j_init = None
 
+        # # Initialize magnet controller if not passed
+        # if magnet_controller is None:
+        #     magnet_controller = BluetoothMagnetController(
+        #         bt_port='/dev/rfcomm0', 
+        #         baud_rate=115200
+        #     )
+
         robot = PiperInterpolationController(
             shm_manager=shm_manager,
             can_interface=can_interface,
+            magnet_controll=magnet_controll,  # Pass the magnet_controller
             frequency=100,  # Adjusted frequency for Piper
             lookahead_time=0.1,
             gain=300,
@@ -574,10 +583,7 @@ class PiperRealEnv:
             reset=reset
         )
 
-        self.magnet_controller = BluetoothMagnetController(
-            bt_port='/dev/rfcomm0', 
-            baud_rate=115200
-            )
+
         self.realsense = realsense
         self.robot = robot
         self.multi_cam_vis = multi_cam_vis
@@ -690,6 +696,8 @@ class PiperRealEnv:
 
         robot_obs_raw = dict()
         for k, v in last_robot_data.items():
+            if k == 'ActualMagnetState':
+                robot_obs_raw['magnet_state'] = v  #
             if k in self.obs_key_map:
                 robot_obs_raw[self.obs_key_map[k]] = v
         
@@ -739,16 +747,16 @@ class PiperRealEnv:
             magnet_cmd = int(full_action[6])  # 0=OFF, 1=ON
 
             # physically control the magnet
-            if self.magnet_controller:
-                self.magnet_controller.control_esp32(magnet_cmd)
+            if self.robot.magnet_controller:
+                self.robot.magnet_controller.control_esp32(magnet_cmd)
 
             pose = full_action[:6]
             target_time = new_timestamps[i]
 
-            # self.robot.schedule_waypoint(
-            #     pose=pose,
-            #     target_time=target_time
-            # )
+            self.robot.schedule_waypoint(
+                pose=pose,
+                target_time=target_time
+            )
 
         # record actions
         if self.action_accumulator is not None:

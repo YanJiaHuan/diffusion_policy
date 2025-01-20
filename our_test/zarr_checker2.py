@@ -60,6 +60,10 @@ def explore_zarr_structure(zarr_path):
             print(f"  First few entries: {dataset[:5]}")
             print("-" * 40)
             
+            # Specifically check for and print the magnet_state dataset
+            if "magnet_state" in dataset_name.lower():
+                print(f"Magnet State (Dataset {group_name}/{dataset_name}): {dataset[:]}")
+            
             # Try to visualize the dataset if it's numeric
             if np.issubdtype(dataset.dtype, np.number):
                 visualize_dataset(f"{group_name}/{dataset_name}", dataset)

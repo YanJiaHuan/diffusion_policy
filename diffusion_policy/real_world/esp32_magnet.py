@@ -46,3 +46,16 @@ class BluetoothMagnetController:
                 print("[Electromagnet] Sent OFF command to ESP32.")
         except serial.SerialException as e:
             print(f"[Electromagnet] Error sending data to ESP32: {e}")
+
+    def get_magnet_state(self):
+        """
+        Instead of returning a boolean, return a float between 0.0 and 1.0,
+        where 1.0 represents the magnet being fully "on" and 0.0 represents it being "off".
+        This could be determined based on various criteria, such as signal strength, magnet's actual status, etc.
+        """
+        # For simplicity, assuming 0.0 to 1.0 based on electromagnet state:
+        # You can replace this logic with more complex models of how the magnet's state probability is determined.
+        if self.electromagnet_state:
+            return 1.0  # Magnet is fully on
+        else:
+            return 0.0  # Magnet is off
