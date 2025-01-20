@@ -473,5 +473,16 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 cd /home/zcai/jh_workspace/piper_sdk 
 bash can_activate.sh can0 1000000
 sudo ethtool -i can0 | grep bus
-bash can_activate.sh can_piper 1000000 "1-5.4:1.0"
+bash can_activate.sh can_piper 1000000 "1-5.3:1.0"
+```
+
+* 采集数据
+连接电磁铁蓝牙通讯模块,因为蓝牙模块被更名为esp32_electromegnet, 所以将模块名以及端口名连接
+```shell
+sudo rfcomm bind /dev/esp32_electromegnet 3C:8A:1F:A0:C0:A6
+```
+
+开始用oculus quest2 控制piper 机械臂进行数据采集，按下A按键
+```shell
+python our_data_collection.py 
 ```

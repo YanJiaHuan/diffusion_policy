@@ -48,7 +48,8 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
     ocu_hz = hz
     oculus_reader = OculusReader()
     handler = OculusHandler(oculus_reader, right_controller=True, hz=ocu_hz, use_filter=False, max_threshold=0.6/ocu_hz)
-
+    magnet_state = 0  # 0=OFF, 1=ON
+    prev_trigger_pressed = False
 
     with SharedMemoryManager() as shm_manager:
         with KeystrokeCounter() as key_counter, \
@@ -155,11 +156,19 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 B_button = buttons.get("B", [0])
                 right_trigger = buttons.get("rightTrig", [0])[0]
                 delta_pos = increment['position']
-                # buttons, position, speed, acc = iter
-                right_trigger = buttons.get("rightTrig", [0])[0]
+                trigger_pressed = (right_trigger > 0.9)
+                #-----------------电磁铁开关---------------------
+                if trigger_pressed and (not prev_trigger_pressed):
+                    # toggle magnet_state
+                    magnet_state = 1 - magnet_state  # if 0->1, if 1->0
+                    print(f"[MAGNET] Toggled to {magnet_state}")
+                prev_trigger_pressed = trigger_pressed
+
+
+                #---------------------------------------------------
                 # 判断是否按下A键，按下A，机械臂允许移动
                 #---------------------------------------------------
-                if not A_button:
+                if A_button:
                     freeze = False
                 else:
                     freeze = True
@@ -178,8 +187,6 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 if freeze:
                     pass
                 else:
-                    print("target_pose",target_pose)
-
                     target_pose[0] = target_pose[0] + delta_pos[0]*0.1
                     target_pose[1] = target_pose[1] + delta_pos[1]*0.1
                     target_pose[2] = target_pose[2] + delta_pos[2]*0.1
@@ -188,10 +195,15 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                     target_pose[4] = np.deg2rad(rpy_vr[1])
                     target_pose[5] = np.deg2rad(rpy_vr[2])
                 #---------------------------------------------------
+                #---------------合并电磁铁状态和末端位姿----------------
+                action_7d = np.zeros(7, dtype=np.float32)
+                action_7d[:6] = target_pose[:6]
+                action_7d[6]  = magnet_state  # 0 or 1
 
-                # execute teleop command
+
+                #execute teleop command
                 env.exec_actions(
-                    actions=[target_pose], 
+                    actions=[action_7d], 
                     timestamps=[t_command_target-time.monotonic()+time.time()],
                     stages=[stage]
                     )

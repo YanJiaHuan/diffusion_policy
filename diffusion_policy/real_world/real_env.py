@@ -19,6 +19,8 @@ from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.cv2_util import (
     get_image_transform, optimal_row_cols)
 
+from diffusion_policy.real_world.esp32_magnet import BluetoothMagnetController
+
 DEFAULT_OBS_KEY_MAP = {
     # robot
     'ActualTCPPose': 'robot_eef_pose',
@@ -571,6 +573,11 @@ class PiperRealEnv:
             get_max_k=max_obs_buffer_size,
             reset=reset
         )
+
+        self.magnet_controller = BluetoothMagnetController(
+            bt_port='/dev/rfcomm0', 
+            baud_rate=115200
+            )
         self.realsense = realsense
         self.robot = robot
         self.multi_cam_vis = multi_cam_vis
@@ -707,7 +714,8 @@ class PiperRealEnv:
             actions: np.ndarray,
             timestamps: np.ndarray,
             stages: Optional[np.ndarray]=None
-):
+):      
+        # 现在这个actions是一个7维的向量，分别代表x,y,z,rx,ry,rz, magnet_state
         assert self.is_ready
         if not isinstance(actions, np.ndarray):
             actions = np.array(actions)
@@ -727,10 +735,20 @@ class PiperRealEnv:
 
         # schedule waypoints
         for i in range(len(new_actions)):
-            self.robot.schedule_waypoint(
-                pose=new_actions[i],
-                target_time=new_timestamps[i]
-            )
+            full_action = new_actions[i]
+            magnet_cmd = int(full_action[6])  # 0=OFF, 1=ON
+
+            # physically control the magnet
+            if self.magnet_controller:
+                self.magnet_controller.control_esp32(magnet_cmd)
+
+            pose = full_action[:6]
+            target_time = new_timestamps[i]
+
+            # self.robot.schedule_waypoint(
+            #     pose=pose,
+            #     target_time=target_time
+            # )
 
         # record actions
         if self.action_accumulator is not None:

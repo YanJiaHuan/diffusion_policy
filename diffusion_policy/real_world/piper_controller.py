@@ -357,7 +357,8 @@ class PiperInterpolationController(mp.Process):
                 iter_idx += 1
 
                 if self.verbose:
-                    print(f"[PiperController] Iteration {iter_idx} completed.")
+                    # print(f"[PiperController] Iteration {iter_idx} completed.")
+                    pass
         finally:
             # self.piper.DisableArm(7)
             # self.piper.GripperCtrl(0,1000,0x02, 0)
