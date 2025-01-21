@@ -463,8 +463,22 @@ sudo apt update && sudo apt install can-utils ethtool
 ```
 
 3. 改动的代码
-* rtde_interpolation_controller.py -> piper_controller.py
+* [新增]rtde_interpolation_controller.py -> piper_controller.py
 DP原作者用了一个controller作为模型输出action，到机械臂驱动action的中间层，但是这个controller需要两个interface，是对UR系列机械臂支持的，但是考虑到不支持piper 机械臂，所以尝试customize 一个controller, 尽量保证功能和函数和之前接近，从而可以在real_env里直接使用它
+
+* [更改]real_env [RealEnv->PiperRealEnv]
+
+* [新增]新加esp32_magnet.py 内含一个电磁铁模块的控制，状态记录类
+
+* [新增]diffusion_policy.config.task.TR3_pickplace_real.yaml
+原作者对于real world 的setup比较少，或者说没公开，所以一方面想要在真实世界完成流程，另一方面需要迁移到自己的机械臂需求上，需要写一些适配代码，以及适配config
+
+* [新增]diffusion_policy.env_runner.real_pickplace_image_runner.py
+
+* [新增]diffusion_policy.dataset.TR3_real_pickplace_iamge_datset.py
+
+* [新增]diffusion_policy.config.train_diffusion_TR3_real_hybrid_workspace.yaml
+
 
 4. 使用方法
 
@@ -486,3 +500,5 @@ sudo rfcomm bind /dev/esp32_electromegnet 3C:8A:1F:A0:C0:A6
 ```shell
 python our_data_collection.py 
 ```
+
+* 训练

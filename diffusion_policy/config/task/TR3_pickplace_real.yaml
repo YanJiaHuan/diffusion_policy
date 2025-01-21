@@ -1,0 +1,46 @@
+name: tr3_pickplace_real
+
+image_shape: [3, 240, 320]
+dataset_path: data/test
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    camera_0: 
+      shape: ${task.image_shape} 
+      type: rgb
+    robot_eef_pose:
+      shape: [6]
+      type: low_dim
+    magnet_state:
+      shape: [1]
+      type: low_dim
+    # robot_gripper_qpos: # Since the gripper info (magnet state) has already been included in robot_eef_pose
+    #   shape: [2]
+    #   type: low_dim
+  action: 
+    shape: [7] # robot eef pose + magnet state
+
+task_name: &task_name pickplace #can
+dataset_type: &dataset_type mh #ph
+
+
+env_runner:
+  _target_: diffusion_policy.env_runner.TR3_real_pickplace_image_runner.RealPickPlaceImageRunner
+
+
+dataset:
+  _target_: diffusion_policy.dataset.real_pickplace_image_dataset.RealPickPlaceImageDataset
+  shape_meta: *shape_meta
+  dataset_path: ${task.dataset_path} #*dataset_path
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  n_obs_steps: ${dataset_obs_steps}
+  # abs_action: *abs_action
+  # rotation_rep: 'rotation_6d'
+  # use_legacy_normalizer: False
+  delta_action: False # if True, the action will be converted to relative action by calling np.diff
+  use_cache: True
+  seed: 42
+  val_ratio: 0.02
