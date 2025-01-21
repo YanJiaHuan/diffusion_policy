@@ -473,12 +473,26 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 * [新增]diffusion_policy.config.task.TR3_pickplace_real.yaml
 原作者对于real world 的setup比较少，或者说没公开，所以一方面想要在真实世界完成流程，另一方面需要迁移到自己的机械臂需求上，需要写一些适配代码，以及适配config
 
-* [新增]diffusion_policy.env_runner.real_pickplace_image_runner.py
+* [新增]diffusion_policy.env_runner.TR3_real_pickplace_image_runner.py
 
 * [新增]diffusion_policy.dataset.TR3_real_pickplace_iamge_datset.py
 
 * [新增]diffusion_policy.config.train_diffusion_TR3_real_hybrid_workspace.yaml
 
+* [新增]diffusion_policy.common.custom_loss.py
+
+* [更改]diffusion_policy.model.vision.model_getter.py
+增加了fpn的call函数 -> fpn_resnet.py
+
+* [新增]diffusion_policy.model.vision.fpn_resnet.py
+
+* [新增]diffusion_policy.model.vision.resnet_modules/
+    * [新增]fpn.py
+    * [新增]resnet.py
+    * [新增]transforms.py
+    * [新增]__init__.py
+
+* [新增]diffusion_policy.model.vision.__init__.py 方便调用
 
 4. 使用方法
 
@@ -502,3 +516,11 @@ python our_data_collection.py
 ```
 
 * 训练
+```shell
+HYDRA_FULL_ERROR=1 python train.py \
+--config-name=train_diffusion_TR3_real_hybrid_workspace \
+task.dataset_path=/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test \
+hydra.run.dir=/home/zcai/jh_workspace/diffusion_policy/data/our_training/test_1_21 \
+training.resume=False \
+dataloader.batch_size=1
+```

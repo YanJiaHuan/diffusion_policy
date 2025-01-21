@@ -1,5 +1,6 @@
 import torch
 import torchvision
+from diffusion_policy.model.vision.fpn_resnet import ResNet_FPN_model
 
 def get_resnet(name, weights=None, **kwargs):
     """
@@ -26,3 +27,11 @@ def get_r3m(name, **kwargs):
     resnet_model = r3m_model.convnet
     resnet_model = resnet_model.to('cpu')
     return resnet_model
+
+def get_fpn_model(name, pretrained = False, **kwargs):
+    """
+    name: resnet18, resnet34, resnet50
+    pretrained: default False
+    """
+    fpn_resnet = ResNet_FPN_model(name, pretrained)
+    return fpn_resnet
