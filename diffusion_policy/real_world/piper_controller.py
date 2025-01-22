@@ -367,7 +367,6 @@ class PiperInterpolationController(mp.Process):
                 iter_idx += 1
 
                 if self.verbose:
-                    # print(f"[PiperController] Iteration {iter_idx} completed.")
                     pass
         finally:
             # self.piper.DisableArm(7)

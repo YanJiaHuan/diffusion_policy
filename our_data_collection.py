@@ -1,11 +1,6 @@
 """
-Usage:
-(robodiff)$ python demo_real_robot.py -o <demo_save_dir> --robot_ip <ip_of_ur5>
-
-Robot movement:
-Move your SpaceMouse to move the robot EEF (locked in xy plane).
-Press SpaceMouse right button to unlock z axis.
-Press SpaceMouse left button to enable rotation axes.
+使用方法请看README.md
+这是基于diffusion_policy的数据采集程序，迁移到piper机械臂，以及特定的设计需求(电磁铁控制替代夹爪控制)
 
 Recording control:
 Click the opencv window (make sure it's in focus).
@@ -23,7 +18,6 @@ import cv2
 import numpy as np
 import scipy.spatial.transform as st
 from diffusion_policy.real_world.real_env import PiperRealEnv
-# from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
 from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.keystroke_counter import (
     KeystrokeCounter, Key, KeyCode
