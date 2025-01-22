@@ -262,6 +262,9 @@ def _fit(data: Union[torch.Tensor, np.ndarray, zarr.Array],
 
 
 def _normalize(x, params, forward=True):
+    #TODO: remove this DEBUG line
+    print(f"Shape of batch['obs']: {x.shape}")
+
     assert 'scale' in params
     if isinstance(x, np.ndarray):
         x = torch.from_numpy(x)

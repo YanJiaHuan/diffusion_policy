@@ -143,6 +143,7 @@ training:
 
 logging:
   project: diffusion_policy_TR3
+  enabled: true  # Add this line to control WandB logging
   resume: True
   mode: online
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}

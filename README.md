@@ -521,6 +521,7 @@ HYDRA_FULL_ERROR=1 python train.py \
 --config-name=train_diffusion_TR3_real_hybrid_workspace \
 task.dataset_path=/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test \
 hydra.run.dir=/home/zcai/jh_workspace/diffusion_policy/data/our_training/test_1_21 \
+logging.enabled=False \
 training.resume=False \
 dataloader.batch_size=1
 ```
