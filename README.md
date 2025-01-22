@@ -465,6 +465,7 @@ sudo apt update && sudo apt install can-utils ethtool
 3. 改动的代码
 * [新增]rtde_interpolation_controller.py -> piper_controller.py
 DP原作者用了一个controller作为模型输出action，到机械臂驱动action的中间层，但是这个controller需要两个interface，是对UR系列机械臂支持的，但是考虑到不支持piper 机械臂，所以尝试customize 一个controller, 尽量保证功能和函数和之前接近，从而可以在real_env里直接使用它
+    * [BUG|已解决|01-22-2025]
 
 * [更改]real_env [RealEnv->PiperRealEnv]
 
@@ -521,7 +522,7 @@ HYDRA_FULL_ERROR=1 python train.py \
 --config-name=train_diffusion_TR3_real_hybrid_workspace \
 task.dataset_path=/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test \
 hydra.run.dir=/home/zcai/jh_workspace/diffusion_policy/data/our_training/test_1_21 \
-logging.enabled=False \
+wandb.enable=False \
 training.resume=False \
 dataloader.batch_size=1
 ```

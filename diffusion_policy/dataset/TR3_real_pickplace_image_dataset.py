@@ -107,7 +107,6 @@ class RealPickPlaceImageDataset(BaseImageDataset):
                 rgb_keys.append(key)
             elif type == 'low_dim':
                 lowdim_keys.append(key)
-        
         key_first_k = dict()
         if n_obs_steps is not None:
             # only take first k obs from images
@@ -263,7 +262,9 @@ def _get_replay_buffer(dataset_path, shape_meta, store):
         # 7D action space, controls X, Y, Z, Qx, Qy, Qz, magnet command
         zarr_arr = replay_buffer['action']
         zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2,3,4,5,6])
+    print('lowdim_shapes:', lowdim_shapes)
     for key, shape in lowdim_shapes.items():
+        print('key:', key)
         if 'pose' in key and shape == (2,):
             # only take X and Y
             zarr_arr = replay_buffer[key]
@@ -273,6 +274,16 @@ def _get_replay_buffer(dataset_path, shape_meta, store):
             zarr_arr = replay_buffer[key]
             zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2,3,4,5])
 
+        elif 'magnet_state' in key and shape == (1,):
+            zarr_arr = replay_buffer[key]
+            if zarr_arr.ndim == 1:
+                # shape is (T,) => convert to (T, 1)
+                old_shape = zarr_arr.shape
+                new_shape = (old_shape[0], 1)
+                print(f"Reshaping magnet_state from {old_shape} to {new_shape}")
+                zarr_arr.resize(new_shape)
+            elif zarr_arr.ndim == 2:
+                zarr_resize_index_last_dim(zarr_arr, idxs=[0])
     return replay_buffer
 
 

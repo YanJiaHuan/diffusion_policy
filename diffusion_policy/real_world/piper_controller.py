@@ -109,7 +109,7 @@ class PiperInterpolationController(mp.Process):
         example = {
             'ActualTCPPose': np.zeros((6,), dtype=np.float64),
             'robot_receive_timestamp': time.time(),
-            'ActualMagnetState': 0.0  # Initialize magnet state (False by default)
+            'ActualMagnetState': np.zeros((1,), dtype=np.float64),
         }
 
         ring_buffer = SharedMemoryRingBuffer.create_from_examples(
@@ -280,7 +280,8 @@ class PiperInterpolationController(mp.Process):
 
             # Capture the ESP32 Magnet State
             magnet_state = self.magnet_controller.get_magnet_state()  # Get magnet state from BluetoothMagnetController
-
+            # convert to numpy array
+            magnet_state = np.array([magnet_state], dtype=np.float64)
 
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
