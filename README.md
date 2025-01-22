@@ -465,7 +465,8 @@ sudo apt update && sudo apt install can-utils ethtool
 3. 改动的代码
 * [新增]rtde_interpolation_controller.py -> piper_controller.py
 DP原作者用了一个controller作为模型输出action，到机械臂驱动action的中间层，但是这个controller需要两个interface，是对UR系列机械臂支持的，但是考虑到不支持piper 机械臂，所以尝试customize 一个controller, 尽量保证功能和函数和之前接近，从而可以在real_env里直接使用它
-    * [BUG|已解决|01-22-2025]
+    * [BUG|已解决|01-22-2025]由于有个记录电磁铁的改动，所以数据的格式改变了，在训练前进入replay_buffer后，会有一个类似`File " ~/diffusion_policy/diffusion_policy/model/common/normalizer.py", line 272, in _normalize
+    x = x.reshape(-1, scale.shape[0])”`的报错，一开始一直在改dataset.py里面的代码，以为是magnet_state在用其他key的shape进行normalize，后来一直debug不出来，最后仔细看了眼报错，发现问题主要在于 magnet_state 这个数据，格式应该是(N,1)而不是(N,)，后续将采集数据(piper_controller)的代码里的magnet_state初始化为np.zeros(1)，问题解决。
 
 * [更改]real_env [RealEnv->PiperRealEnv]
 
@@ -526,3 +527,10 @@ wandb.enable=False \
 training.resume=False \
 dataloader.batch_size=1
 ```
+参数解释
+```markdown
+hydra.run.dir:模型存储路径
+wandb.enable:是否需要启动wandb,一般测试的时候选择False
+training.resume:是否从断点接续训练，这个如果设置成True，需要在hydra.run.dir这个路径有checkpoints/latest.ckpt
+```
+
