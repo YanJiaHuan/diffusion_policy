@@ -25,9 +25,9 @@ class Command(enum.Enum):
 class PiperInterpolationController(mp.Process):
     def __init__(self,
                  shm_manager: SharedMemoryManager,
+                 magnet_controller: BluetoothMagnetController,
                  can_interface="can_piper",
-                 magnet_controll=True,  # Add magnet_controller as an argument
-                 frequency=100,
+                 frequency=10,
                  lookahead_time=0.1,
                  gain=300,
                  max_pos_speed=0.25,
@@ -79,11 +79,10 @@ class PiperInterpolationController(mp.Process):
         self.verbose = verbose
         self.reset = reset
 
+
         self.piper = C_PiperInterface(self.can_interface)
-        if magnet_controll:
-            self.magnet_controller = BluetoothMagnetController(bt_port='/dev/rfcomm0', baud_rate=115200)
-        else:
-            assert False, "Magnet control is not enabled. Please enable it."
+        self.magnet_controller = magnet_controller
+
         # Input Queue
         example = {
             'cmd': Command.SERVOL.value,
@@ -278,11 +277,6 @@ class PiperInterpolationController(mp.Process):
                 np.deg2rad(curr_pose_raw.end_pose.RZ_axis/1000)
             ]
 
-            # Capture the ESP32 Magnet State
-            magnet_state = self.magnet_controller.get_magnet_state()  # Get magnet state from BluetoothMagnetController
-            # convert to numpy array
-            magnet_state = np.array([magnet_state], dtype=np.float64)
-
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
             pose_interp = PoseTrajectoryInterpolator(
@@ -294,6 +288,11 @@ class PiperInterpolationController(mp.Process):
             while keep_running:
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
+                # Capture the ESP32 Magnet State
+                magnet_state = self.magnet_controller.get_magnet_state()  # Get magnet state from BluetoothMagnetController
+                # convert to numpy array
+                magnet_state = np.array([magnet_state], dtype=np.float64)
+                print(f"[PiperController] Magnet State: {magnet_state}")
                 scaled_pose = [
                     int(pose_command[0]*1000000), 
                     int(pose_command[1]*1000000),
@@ -309,7 +308,7 @@ class PiperInterpolationController(mp.Process):
                 time.sleep(max(0, (1 / self.frequency) - (time.monotonic() - t_now)))
                 # update robot state
                 state = {
-                    'ActualTCPPose': pose_command,
+                    'ActualTCPPose': scaled_pose,
                     'robot_receive_timestamp': time.time(),
                     'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }

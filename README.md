@@ -467,8 +467,8 @@ sudo apt update && sudo apt install can-utils ethtool
 DP原作者用了一个controller作为模型输出action，到机械臂驱动action的中间层，但是这个controller需要两个interface，是对UR系列机械臂支持的，但是考虑到不支持piper 机械臂，所以尝试customize 一个controller, 尽量保证功能和函数和之前接近，从而可以在real_env里直接使用它
     * [[BUG](https://github.com/YanJiaHuan/diffusion_policy/commit/e490b71c196f2fc3ddff4b5a32b783ea457163ec)|已解决|01-22-2025]由于有个记录电磁铁的改动，所以数据的格式改变了，在训练前进入replay_buffer后，会有一个类似`File " ~/diffusion_policy/diffusion_policy/model/common/normalizer.py", line 272, in _normalize
     x = x.reshape(-1, scale.shape[0])”`的报错，一开始一直在改dataset.py里面的代码，以为是magnet_state在用其他key的shape进行normalize，后来一直debug不出来，最后仔细看了眼报错，发现问题主要在于 magnet_state 这个数据，格式应该是(N,1)而不是(N,)，后续将采集数据(piper_controller)的代码里的magnet_state初始化为np.zeros(1)，问题解决。
+    * [[更改](https://github.com/YanJiaHuan/diffusion_policy/commit/d0bc13dd31567cebc81c26169a3de937a93fa397)|01-23-2025]之前采数据存储的actualtcppose是用的直接发送给piper sdk的数据，单位是0.001mm,0.001度，现在直接使用pose_command,单位是m和弧度
 
-    
 
 * [更改]real_env.py [RealEnv->PiperRealEnv]
     * [BUG|未解决|01-23-2025]采集的magnet_state 永远是0.0,不会变成1.0

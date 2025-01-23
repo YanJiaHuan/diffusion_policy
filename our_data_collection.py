@@ -29,28 +29,25 @@ from scipy.spatial.transform import Rotation as R
 import math
 
 @click.command()
-@click.option('--output', '-o', default = 'data/our_collected_data/test', help="Directory to save demonstration dataset.")
+@click.option('--output', '-o', default = 'data/our_collected_data/test2', help="Directory to save demonstration dataset.")
 @click.option('--can_interface', '-c', default='can_piper', help="CAN interface to use.")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
 @click.option('--reset', '-r', is_flag=True, default=True, help="Whether to initialize robot joint configuration in the beginning.")
-@click.option('--frequency', '-f', default=30, type=float, help="Control frequency in Hz.")
+@click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SapceMouse command to executing on Robot in Sec.")
 def main(output, can_interface, vis_camera_idx, reset, frequency, command_latency):
 
     dt = 1/frequency
-    hz = 60
-    ocu_hz = hz
+    ocu_hz = 60
     oculus_reader = OculusReader()
     handler = OculusHandler(oculus_reader, right_controller=True, hz=ocu_hz, use_filter=False, max_threshold=0.6/ocu_hz)
-    magnet_state = 0  # 0=OFF, 1=ON
-    prev_trigger_pressed = False
-
+    magnet_state = False
+    last_magnet_state = False
     with SharedMemoryManager() as shm_manager:
         with KeystrokeCounter() as key_counter, \
             PiperRealEnv(
                 output_dir=output, 
                 can_interface = can_interface,
-                magnet_controll = True,
                 # recording resolution
                 obs_image_resolution=(1280,720),
                 frequency=frequency,
@@ -75,9 +72,7 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
 
 
             state = env.get_robot_state()
-            print("now robot state is",state)
             target_pose = state['ActualTCPPose']
-            print(target_pose)
             t_start = time.monotonic()
             iter_idx = 0
             stop = False
@@ -151,15 +146,6 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 B_button = buttons.get("B", [0])
                 right_trigger = buttons.get("rightTrig", [0])[0]
                 delta_pos = increment['position']
-                trigger_pressed = (right_trigger > 0.9)
-                #-----------------电磁铁开关---------------------
-                if trigger_pressed and (not prev_trigger_pressed):
-                    # toggle magnet_state
-                    magnet_state = 1 - magnet_state  # if 0->1, if 1->0
-                    print(f"[MAGNET] Toggled to {magnet_state}")
-                prev_trigger_pressed = trigger_pressed
-
-
                 #---------------------------------------------------
                 # 判断是否按下A键，按下A，机械臂允许移动
                 #---------------------------------------------------
@@ -189,10 +175,22 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                     target_pose[4] = np.deg2rad(rpy_vr[1])
                     target_pose[5] = np.deg2rad(rpy_vr[2])
                 #---------------------------------------------------
+                #---------------电磁铁状态转换控制---------------------
+                if right_trigger >= 0.8 and not last_magnet_state:
+                    magnet_state = not magnet_state
+                    last_magnet_state = True
+                elif right_trigger < 0.8:
+                    last_magnet_state = False
+                else:
+                    pass
                 #---------------合并电磁铁状态和末端位姿----------------
                 action_7d = np.zeros(7, dtype=np.float64)
                 action_7d[:6] = target_pose[:6]
-                action_7d[6]  = magnet_state  # 0 or 1
+                if magnet_state:
+                    magnet_on = 1.0
+                else:
+                    magnet_on = 0.0
+                action_7d[6] = magnet_on 
 
 
                 #execute teleop command

@@ -440,8 +440,7 @@ class PiperRealEnv:
     def __init__(self, 
                  output_dir,
                  can_interface="can_piper",
-                 magnet_controll=True,
-                 frequency=100,
+                 frequency=10,
                  n_obs_steps=2,
                  obs_image_resolution=(640, 480),
                  max_obs_buffer_size=30,
@@ -553,19 +552,12 @@ class PiperRealEnv:
         j_init = np.array([0,-90,-90,-90,90,0]) / 180 * np.pi
         if not joint_init:
             j_init = None
-
-        # # Initialize magnet controller if not passed
-        # if magnet_controller is None:
-        #     magnet_controller = BluetoothMagnetController(
-        #         bt_port='/dev/rfcomm0', 
-        #         baud_rate=115200
-        #     )
-
+        magnet_controller = BluetoothMagnetController(bt_port='/dev/rfcomm0', baud_rate=115200)
         robot = PiperInterpolationController(
             shm_manager=shm_manager,
+            magnet_controller=magnet_controller,  # Pass the magnet_controller
             can_interface=can_interface,
-            magnet_controll=magnet_controll,  # Pass the magnet_controller
-            frequency=100,  # Adjusted frequency for Piper
+            frequency=10,  # Adjusted frequency for Piper
             lookahead_time=0.1,
             gain=300,
             max_pos_speed=max_pos_speed*cube_diag,
@@ -586,6 +578,7 @@ class PiperRealEnv:
 
         self.realsense = realsense
         self.robot = robot
+        self.magnet_controller = magnet_controller
         self.multi_cam_vis = multi_cam_vis
         self.video_capture_fps = video_capture_fps
         self.frequency = frequency
@@ -704,7 +697,9 @@ class PiperRealEnv:
         robot_obs = dict()
         for k, v in robot_obs_raw.items():
             robot_obs[k] = v[this_idxs]
-
+        #DEBUG
+        # print('DEBUG: robot_obs_raw', robot_obs_raw)
+        # print('DEBUG: last_robot_data', last_robot_data)
         # accumulate obs
         if self.obs_accumulator is not None:
             self.obs_accumulator.put(
@@ -744,11 +739,10 @@ class PiperRealEnv:
         # schedule waypoints
         for i in range(len(new_actions)):
             full_action = new_actions[i]
-            magnet_cmd = int(full_action[6])  # 0=OFF, 1=ON
+            magnet_cmd = full_action[6]  
 
             # physically control the magnet
-            if self.robot.magnet_controller:
-                self.robot.magnet_controller.control_esp32(magnet_cmd)
+            self.magnet_controller.control_esp32(magnet_cmd)
 
             pose = full_action[:6]
             target_time = new_timestamps[i]

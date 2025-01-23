@@ -10,7 +10,7 @@ class BluetoothMagnetController:
         self.bt_port = bt_port
         self.bt_baud_rate = baud_rate
         self.connection = None
-        self.electromagnet_state = 0.0  # Tracks ON/OFF state of electromagnet
+        self.electromagnet_state = False 
         self.setup_bluetooth()
 
     def setup_bluetooth(self):
@@ -22,30 +22,26 @@ class BluetoothMagnetController:
             self.connection = None
             print(f"[Electromagnet] Failed to connect to Bluetooth device: {e}")
 
-    def control_esp32(self, gripper_value):
+    def control_esp32(self, magnet_on):
         """
         If your 'right_trigger' or some button is pressed, we interpret that 
         as 'turn electromagnet ON'. If not pressed, turn it OFF.
         
-        gripper_value: 0 or 1 (0=OFF, 1=ON)
+        gripper_value: 0.0 ～1.0
         """
         if not self.connection or not self.connection.is_open:
             print("[Electromagnet] Bluetooth not available or not open.")
             return
 
         try:
-            # Turn ON if not ON already
-            if gripper_value == 1 and (not self.electromagnet_state):
-                self.connection.write(b'1')  # or whatever your ESP32 code expects
-                self.electromagnet_state = 1.0
-                print("[Electromagnet] Sent ON command to ESP32.")
-            # Turn OFF if currently ON
-            elif gripper_value != 1 and self.electromagnet_state:
-                self.connection.write(b'0')  # or whatever your ESP32 code expects
-                self.electromagnet_state = 0.0
-                print("[Electromagnet] Sent OFF command to ESP32.")
+            if int(magnet_on) == 1:
+                self.connection.write(b'1')
+                self.electromagnet_state = True
+            else:
+                self.connection.write(b'0')
+                self.electromagnet_state = False
         except serial.SerialException as e:
-            print(f"[Electromagnet] Error sending data to ESP32: {e}")
+            print(f"[Electromagnet] Error writing to Bluetooth device: {e}")
 
     def get_magnet_state(self):
         """
@@ -55,4 +51,7 @@ class BluetoothMagnetController:
         """
         # For simplicity, assuming 0.0 to 1.0 based on electromagnet state:
         # You can replace this logic with more complex models of how the magnet's state probability is determined.
-        return self.electromagnet_state
+        if self.electromagnet_state:
+            return 1.0
+        else:
+            return 0.0

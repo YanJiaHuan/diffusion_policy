@@ -1,72 +1,97 @@
 import zarr
-import os
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import os
 
-def explore_zarr_structure(zarr_path):
-    def print_group(group, indent=0):
-        for key in group:
-            print('  ' * indent + f"Key: {key}")
-            item = group[key]
-            if isinstance(item, zarr.hierarchy.Group):
-                print('  ' * indent + f"Group: {key}/")
-                print_group(item, indent + 1)
-            else:
-                print('  ' * indent + f"Dataset: {key} | Shape: {item.shape} | Dtype: {item.dtype}")
+def plot_action(action_data):
+    plt.figure(figsize=(15, 8))
+    for i in range(action_data.shape[1]):
+        plt.plot(action_data[:, i], label=f'Action Dim {i+1}')
+    plt.title('Action Data Over Time')
+    plt.xlabel('Time Step')
+    plt.ylabel('Action Value')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_magnet_state(magnet_state_data):
+    plt.figure(figsize=(15, 4))
+    plt.plot(magnet_state_data, label='Magnet State', color='magenta')
+    plt.title('Magnet State Over Time')
+    plt.xlabel('Time Step')
+    plt.ylabel('Magnet State')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_robot_eef_pose(robot_eef_pose_data):
+    plt.figure(figsize=(15, 8))
+    for i in range(robot_eef_pose_data.shape[1]):
+        plt.plot(robot_eef_pose_data[:, i], label=f'EEF Pose Dim {i+1}')
+    plt.title('Robot End-Effector Pose Over Time')
+    plt.xlabel('Time Step')
+    plt.ylabel('Pose Value')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_stage(stage_data):
+    plt.figure(figsize=(15, 4))
+    plt.step(range(len(stage_data)), stage_data, where='mid', label='Stage', color='green')
+    plt.title('Stage Over Time')
+    plt.xlabel('Time Step')
+    plt.ylabel('Stage')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_timestamp(timestamp_data):
+    plt.figure(figsize=(15, 4))
+    plt.plot(timestamp_data, label='Timestamp', color='orange')
+    plt.title('Timestamp Over Time')
+    plt.xlabel('Time Step')
+    plt.ylabel('Timestamp (s)')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def explore_and_plot_zarr(zarr_path):
+    if not os.path.exists(zarr_path):
+        print(f"Zarr path does not exist: {zarr_path}")
+        return
     
-    def visualize_dataset(name, dataset):
-        data = dataset[:]
-        if data.ndim == 1:
-            plt.figure()
-            plt.plot(data)
-            plt.title(f"{name} - Line Plot")
-            plt.xlabel("Index")
-            plt.ylabel("Value")
-            plt.show()
-        elif data.ndim == 2:
-            plt.figure()
-            plt.imshow(data, aspect='auto')
-            plt.title(f"{name} - Heatmap")
-            plt.colorbar()
-            plt.show()
-        elif data.ndim == 3 and data.shape[-1] in [1, 3]:
-            plt.figure()
-            if data.shape[-1] == 1:
-                plt.imshow(data.squeeze(), cmap='gray')
-            else:
-                plt.imshow(data.astype(np.uint8))
-            plt.title(f"{name} - Image")
-            plt.axis('off')
-            plt.show()
-        else:
-            print(f"Visualization not supported for {name} with shape {dataset.shape}")
-
-    # Open the Zarr store
     zarr_store = zarr.open(zarr_path, mode='r')
     
-    print(f"Exploring Zarr dataset at: {zarr_path}")
-    print("-" * 40)
-    print_group(zarr_store)
-    print("-" * 40)
-    
-    # Show basic statistics and visualize data if possible
-    for group_name in zarr_store:
-        group = zarr_store[group_name]
-        for dataset_name in group:
-            dataset = group[dataset_name]
-            print(f"Dataset: {group_name}/{dataset_name}")
-            print(f"  Shape: {dataset.shape}")
-            print(f"  Dtype: {dataset.dtype}")
-            print(f"  First few entries: {dataset[:5]}")
-            print("-" * 40)
+    for key in zarr_store:
+        group = zarr_store[key]
+        print(f"Processing group: {key}/")
+        
+        for dataset_key in group:
+            dataset = group[dataset_key]
+            data = dataset[:]
+            print(f"  Dataset: {dataset_key} | Shape: {data.shape} | Dtype: {data.dtype}")
             
-            # Specifically check for and print the magnet_state dataset
-            if "magnet_state" in dataset_name.lower():
-                print(f"Magnet State (Dataset {group_name}/{dataset_name}): {dataset[:]}")
-            
-            # Try to visualize the dataset if it's numeric
-            if np.issubdtype(dataset.dtype, np.number):
-                visualize_dataset(f"{group_name}/{dataset_name}", dataset)
+            if key == 'data':
+                if dataset_key == 'action':
+                    plot_action(data)
+                elif dataset_key == 'magnet_state':
+                    plot_magnet_state(data)
+                elif dataset_key == 'robot_eef_pose':
+                    plot_robot_eef_pose(data)
+                elif dataset_key == 'stage':
+                    plot_stage(data)
+                elif dataset_key == 'timestamp':
+                    plot_timestamp(data)
+                else:
+                    print(f"    No plotting function defined for dataset: {dataset_key}")
+            elif key == 'meta':
+                if dataset_key == 'episode_ends':
+                    print("  Meta Dataset 'episode_ends' contains:", data)
+                else:
+                    print(f"    No plotting function defined for meta dataset: {dataset_key}")
+            else:
+                print(f"    No plotting function defined for group: {key}")
 
-# Example usage
-explore_zarr_structure("/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test/replay_buffer.zarr")
+# 示例用法
+zarr_file_path = "/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test2/replay_buffer.zarr"
+explore_and_plot_zarr(zarr_file_path)
