@@ -468,9 +468,13 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
     * [BUG|已解决|01-22-2025]由于有个记录电磁铁的改动，所以数据的格式改变了，在训练前进入replay_buffer后，会有一个类似`File " ~/diffusion_policy/diffusion_policy/model/common/normalizer.py", line 272, in _normalize
     x = x.reshape(-1, scale.shape[0])”`的报错，一开始一直在改dataset.py里面的代码，以为是magnet_state在用其他key的shape进行normalize，后来一直debug不出来，最后仔细看了眼报错，发现问题主要在于 magnet_state 这个数据，格式应该是(N,1)而不是(N,)，后续将采集数据(piper_controller)的代码里的magnet_state初始化为np.zeros(1)，问题解决。
 
-* [更改]real_env [RealEnv->PiperRealEnv]
+* [更改]real_env.py [RealEnv->PiperRealEnv]
+    * [BUG|未解决|01-23-2025]采集的magnet_state 永远是0.0,不会变成1.0
 
 * [新增]新加esp32_magnet.py 内含一个电磁铁模块的控制，状态记录类
+
+* [新增]our_data_collection.py rebuild一套数据采集脚本
+    * [更改|01-23-2025] Action 之前是按np.float32采集的，现在对齐原本的代码，用float64采集
 
 * [新增]diffusion_policy.config.task.TR3_pickplace_real.yaml
 原作者对于real world 的setup比较少，或者说没公开，所以一方面想要在真实世界完成流程，另一方面需要迁移到自己的机械臂需求上，需要写一些适配代码，以及适配config
@@ -534,3 +538,7 @@ wandb.enable:是否需要启动wandb,一般测试的时候选择False
 training.resume:是否从断点接续训练，这个如果设置成True，需要在hydra.run.dir这个路径有checkpoints/latest.ckpt
 ```
 
+* 推理
+```shell
+python our_demo.py -m data/our_training/test_1_21/checkpoints/epoch=0150-train_loss=0.787.ckpt
+```

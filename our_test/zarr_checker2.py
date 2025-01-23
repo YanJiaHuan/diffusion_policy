@@ -69,4 +69,4 @@ def explore_zarr_structure(zarr_path):
                 visualize_dataset(f"{group_name}/{dataset_name}", dataset)
 
 # Example usage
-explore_zarr_structure("/home/zcai/jh_workspace/diffusion_policy/data/test/replay_buffer.zarr")
+explore_zarr_structure("/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test/replay_buffer.zarr")

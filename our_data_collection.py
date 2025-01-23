@@ -190,7 +190,7 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                     target_pose[5] = np.deg2rad(rpy_vr[2])
                 #---------------------------------------------------
                 #---------------合并电磁铁状态和末端位姿----------------
-                action_7d = np.zeros(7, dtype=np.float32)
+                action_7d = np.zeros(7, dtype=np.float64)
                 action_7d[:6] = target_pose[:6]
                 action_7d[6]  = magnet_state  # 0 or 1
 
