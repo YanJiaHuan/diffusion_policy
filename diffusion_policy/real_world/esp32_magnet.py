@@ -10,7 +10,7 @@ class BluetoothMagnetController:
         self.bt_port = bt_port
         self.bt_baud_rate = baud_rate
         self.connection = None
-        self.electromagnet_state = False  # Tracks ON/OFF state of electromagnet
+        self.electromagnet_state = 0.0  # Tracks ON/OFF state of electromagnet
         self.setup_bluetooth()
 
     def setup_bluetooth(self):
@@ -37,12 +37,12 @@ class BluetoothMagnetController:
             # Turn ON if not ON already
             if gripper_value == 1 and (not self.electromagnet_state):
                 self.connection.write(b'1')  # or whatever your ESP32 code expects
-                self.electromagnet_state = True
+                self.electromagnet_state = 1.0
                 print("[Electromagnet] Sent ON command to ESP32.")
             # Turn OFF if currently ON
             elif gripper_value != 1 and self.electromagnet_state:
                 self.connection.write(b'0')  # or whatever your ESP32 code expects
-                self.electromagnet_state = False
+                self.electromagnet_state = 0.0
                 print("[Electromagnet] Sent OFF command to ESP32.")
         except serial.SerialException as e:
             print(f"[Electromagnet] Error sending data to ESP32: {e}")
@@ -55,7 +55,4 @@ class BluetoothMagnetController:
         """
         # For simplicity, assuming 0.0 to 1.0 based on electromagnet state:
         # You can replace this logic with more complex models of how the magnet's state probability is determined.
-        if self.electromagnet_state:
-            return 1.0  # Magnet is fully on
-        else:
-            return 0.0  # Magnet is off
+        return self.electromagnet_state

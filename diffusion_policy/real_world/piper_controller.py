@@ -309,7 +309,7 @@ class PiperInterpolationController(mp.Process):
                 time.sleep(max(0, (1 / self.frequency) - (time.monotonic() - t_now)))
                 # update robot state
                 state = {
-                    'ActualTCPPose': scaled_pose,
+                    'ActualTCPPose': pose_command,
                     'robot_receive_timestamp': time.time(),
                     'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }
