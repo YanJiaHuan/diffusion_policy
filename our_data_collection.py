@@ -43,11 +43,15 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
     handler = OculusHandler(oculus_reader, right_controller=True, hz=ocu_hz, use_filter=False, max_threshold=0.6/ocu_hz)
     magnet_state = False
     last_magnet_state = False
+    bt_port='/dev/rfcomm0'
+    baud_rate=115200
     with SharedMemoryManager() as shm_manager:
         with KeystrokeCounter() as key_counter, \
             PiperRealEnv(
                 output_dir=output, 
                 can_interface = can_interface,
+                bt_port=bt_port,
+                baud_rate=baud_rate,
                 # recording resolution
                 obs_image_resolution=(1280,720),
                 frequency=frequency,
@@ -67,7 +71,9 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
             env.realsense.set_exposure(exposure=120, gain=0)
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
-
+            while not env.is_ready:
+                print("[DEBUG] Waiting for environment to become ready...")
+                time.sleep(0.1)
             time.sleep(1.0)
 
 

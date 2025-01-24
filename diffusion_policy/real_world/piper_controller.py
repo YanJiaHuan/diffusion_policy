@@ -8,7 +8,8 @@ from diffusion_policy.shared_memory.shared_memory_queue import SharedMemoryQueue
 from diffusion_policy.shared_memory.shared_memory_ring_buffer import SharedMemoryRingBuffer
 from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryInterpolator
 from piper_sdk import C_PiperInterface
-from diffusion_policy.real_world.esp32_magnet import BluetoothMagnetController
+import serial
+
 
 # ============================== #
 #           COMMANDS             #
@@ -18,6 +19,7 @@ class Command(enum.Enum):
     SERVOL = 1
     SCHEDULE_WAYPOINT = 2
     MOVE_POINT = 3
+    MAGNET = 4
 
 # ============================== #
 #        PIPER CONTROLLER        #
@@ -25,8 +27,9 @@ class Command(enum.Enum):
 class PiperInterpolationController(mp.Process):
     def __init__(self,
                  shm_manager: SharedMemoryManager,
-                 magnet_controller: BluetoothMagnetController,
                  can_interface="can_piper",
+                 bt_port='/dev/rfcomm0',
+                 bt_baud_rate=115200,
                  frequency=10,
                  lookahead_time=0.1,
                  gain=300,
@@ -79,16 +82,23 @@ class PiperInterpolationController(mp.Process):
         self.verbose = verbose
         self.reset = reset
 
-
+        #---------------Magnet Controller----------------
+        self.bt_port = bt_port
+        self.bt_baud_rate = bt_baud_rate
+        self.bt_connection = None  # will hold serial.Serial object
+        self.current_magnet_state = 0.0  # track magnet state locally
+        #-------------------------------------------------
         self.piper = C_PiperInterface(self.can_interface)
-        self.magnet_controller = magnet_controller
+        
+        
 
         # Input Queue
         example = {
             'cmd': Command.SERVOL.value,
             'target_pose': np.zeros((6,), dtype=np.float64),
             'duration': 0.0,
-            'target_time': 0.0
+            'target_time': 0.0,
+            'magnet_on': 0.0
         }
         input_queue = SharedMemoryQueue.create_from_examples(
             shm_manager=shm_manager,
@@ -123,6 +133,7 @@ class PiperInterpolationController(mp.Process):
         self.input_queue = input_queue
         self.ring_buffer = ring_buffer
         self.receive_keys = receive_keys
+
         
 
     # ========= Launch Methods ===========
@@ -139,11 +150,22 @@ class PiperInterpolationController(mp.Process):
             self.stop_wait()
 
     def start_wait(self):
-        self.ready_event.wait(self.launch_timeout)
+        got_event = self.ready_event.wait(self.launch_timeout)
+        if not got_event:
+            raise RuntimeError("Piper controller never became ready!")
         assert self.is_alive()
 
     def stop_wait(self):
         self.join()
+
+    def setup_bluetooth(self):
+        try:
+            self.bt_connection = serial.Serial(self.bt_port, self.bt_baud_rate)
+            time.sleep(2.0)  # Give the connection a couple seconds to initialize
+            print("[Electromagnet] Bluetooth connection established.")
+        except serial.SerialException as e:
+            self.bt_connection = None
+            print(f"[Electromagnet] Failed to connect to Bluetooth device: {e}")
 
     @property
     def is_ready(self):
@@ -224,6 +246,27 @@ class PiperInterpolationController(mp.Process):
                 exit(0)
             time.sleep(0.5)
 
+    def control_esp32(self, magnet_on):
+        """
+        If your 'right_trigger' or some button is pressed, we interpret that 
+        as 'turn electromagnet ON'. If not pressed, turn it OFF.
+        
+        gripper_value: 0.0 ～1.0
+        """
+        if not self.bt_connection or not self.bt_connection.is_open:
+            print("[Electromagnet] Bluetooth not available or not open.")
+            return
+
+        try:
+            if int(magnet_on) == 1:
+                self.bt_connection.write(b'1')
+                self.current_magnet_state = 1.0
+            else:
+                self.bt_connection.write(b'0')
+                self.current_magnet_state = 0.0
+        except serial.SerialException as e:
+            print(f"[Electromagnet] Error writing to Bluetooth device: {e}")
+
     # ========= Main Loop ===========
     def run(self):
         # enable soft real-time
@@ -235,7 +278,7 @@ class PiperInterpolationController(mp.Process):
         self.piper.EnableArm(7)
         self._wait_until_enabled()
         self.piper.GripperCtrl(0, 1000, 0x01, 0)
-
+        self.setup_bluetooth()
         try:
             if self.verbose:
                 print("[PiperController] Starting main loop.")
@@ -263,7 +306,7 @@ class PiperInterpolationController(mp.Process):
                 self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
                 self.piper.MotionCtrl_2(0x01, 0x01, 30, 0x00)
                 print("[PiperController] Reset the robot.")
-                time.sleep(3)
+                time.sleep(2)
                 
             # main loop
             dt = 1. / self.frequency
@@ -288,11 +331,9 @@ class PiperInterpolationController(mp.Process):
             while keep_running:
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
-                # Capture the ESP32 Magnet State
-                magnet_state = self.magnet_controller.get_magnet_state()  # Get magnet state from BluetoothMagnetController
-                # convert to numpy array
+                magnet_state = self.current_magnet_state
                 magnet_state = np.array([magnet_state], dtype=np.float64)
-                print(f"[PiperController] Magnet State: {magnet_state}")
+
                 scaled_pose = [
                     int(pose_command[0]*1000000), 
                     int(pose_command[1]*1000000),
@@ -358,11 +399,17 @@ class PiperInterpolationController(mp.Process):
                             last_waypoint_time=last_waypoint_time
                         )
                         last_waypoint_time = target_time
+
+                    elif cmd == Command.MAGNET.value:
+                        magnet_on = command['magnet_on']
+                        self.control_esp32(magnet_on)
                     else:
                         keep_running = False
                         break
+
                 if iter_idx == 0:
                     self.ready_event.set()
+
                 iter_idx += 1
 
                 if self.verbose:

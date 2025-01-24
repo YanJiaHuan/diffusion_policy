@@ -1,5 +1,7 @@
 import serial
 import time
+import multiprocessing as mp
+from diffusion_policy.shared_memory.shared_memory_queue import Empty
 
 class BluetoothMagnetController:
     def __init__(self, bt_port='/dev/rfcomm0', baud_rate=115200):
@@ -55,3 +57,32 @@ class BluetoothMagnetController:
             return 1.0
         else:
             return 0.0
+        
+
+def magnet_controller_process(command_queue: mp.Queue, state_queue: mp.Queue, bt_port='/dev/rfcomm0', baud_rate=115200):
+    """
+    独立的磁铁控制进程。
+    """
+    magnet = BluetoothMagnetController(bt_port=bt_port, baud_rate=baud_rate)
+    while True:
+        try:
+            command = command_queue.get(timeout=0.1)  # 非阻塞等待命令
+            if command == 'STOP':
+                print("[MagnetController] Stopping magnet controller process.")
+                break
+            elif isinstance(command, dict):
+                action = command.get('action')
+                if action == 'control_esp32':
+                    magnet_on = command.get('value', 0)
+                    magnet.control_esp32(magnet_on)
+        except Empty:
+            pass  # 没有新命令，继续
+
+        # 定期发送当前磁铁状态
+        current_state = magnet.get_magnet_state()
+        state_queue.put({'magnet_state': current_state})
+
+    # 清理
+    if magnet.connection and magnet.connection.is_open:
+        magnet.connection.close()
+    print("[MagnetController] Magnet controller process terminated.")

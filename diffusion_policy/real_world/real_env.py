@@ -19,7 +19,10 @@ from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.cv2_util import (
     get_image_transform, optimal_row_cols)
 
-from diffusion_policy.real_world.esp32_magnet import BluetoothMagnetController
+from diffusion_policy.real_world.esp32_magnet import magnet_controller_process
+from diffusion_policy.shared_memory.shared_memory_queue import Empty
+import multiprocessing as mp
+from diffusion_policy.real_world.piper_controller import Command
 
 DEFAULT_OBS_KEY_MAP = {
     # robot
@@ -440,6 +443,8 @@ class PiperRealEnv:
     def __init__(self, 
                  output_dir,
                  can_interface="can_piper",
+                 bt_port='/dev/rfcomm0',
+                 baud_rate=115200,
                  frequency=10,
                  n_obs_steps=2,
                  obs_image_resolution=(640, 480),
@@ -552,17 +557,24 @@ class PiperRealEnv:
         j_init = np.array([0,-90,-90,-90,90,0]) / 180 * np.pi
         if not joint_init:
             j_init = None
-        magnet_controller = BluetoothMagnetController(bt_port='/dev/rfcomm0', baud_rate=115200)
+
+        #----------------- Add the magnet_process ---------------------
+        self.bt_port = bt_port
+        self.bt_baud_rate = baud_rate
+        #--------------------------------------------------------------
+
+
         robot = PiperInterpolationController(
             shm_manager=shm_manager,
-            magnet_controller=magnet_controller,  # Pass the magnet_controller
             can_interface=can_interface,
+            bt_port=self.bt_port,
+            bt_baud_rate=self.bt_baud_rate,
             frequency=10,  # Adjusted frequency for Piper
             lookahead_time=0.1,
             gain=300,
             max_pos_speed=max_pos_speed*cube_diag,
             max_rot_speed=max_rot_speed*cube_diag,
-            launch_timeout=3,
+            launch_timeout=5,
             tcp_offset_pose=[0,0,tcp_offset,0,0,0],
             payload_mass=None,
             payload_cog=None,
@@ -578,7 +590,6 @@ class PiperRealEnv:
 
         self.realsense = realsense
         self.robot = robot
-        self.magnet_controller = magnet_controller
         self.multi_cam_vis = multi_cam_vis
         self.video_capture_fps = video_capture_fps
         self.frequency = frequency
@@ -603,8 +614,8 @@ class PiperRealEnv:
     # ======== start-stop API =============
     @property
     def is_ready(self):
-        return self.realsense.is_ready and self.robot.is_ready
-    
+        ready = self.realsense.is_ready and self.robot.is_ready
+        return ready
     def start(self, wait=True):
         self.realsense.start(wait=False)
         self.robot.start(wait=False)
@@ -742,8 +753,8 @@ class PiperRealEnv:
             magnet_cmd = full_action[6]  
 
             # physically control the magnet
-            self.magnet_controller.control_esp32(magnet_cmd)
-
+            # self.robot.control_esp32(magnet_cmd)
+            self.robot.input_queue.put({'cmd': Command.MAGNET.value, 'magnet_on': float(magnet_cmd)})
             pose = full_action[:6]
             target_time = new_timestamps[i]
 

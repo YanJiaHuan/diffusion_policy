@@ -471,7 +471,7 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 
 
 * [更改]real_env.py [RealEnv->PiperRealEnv]
-    * [BUG|未解决|01-23-2025]采集的magnet_state 永远是0.0,不会变成1.0
+    * [BUG|未解决|01-23-2025]采集的magnet_state 永远是0.0,不会变成1.0,
 
 * [新增]新加esp32_magnet.py 内含一个电磁铁模块的控制，状态记录类
 
