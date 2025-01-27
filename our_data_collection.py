@@ -71,9 +71,6 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
             env.realsense.set_exposure(exposure=120, gain=0)
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
-            while not env.is_ready:
-                print("[DEBUG] Waiting for environment to become ready...")
-                time.sleep(0.1)
             time.sleep(1.0)
 
 
@@ -143,11 +140,12 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 increment = handler.get_increment()
                 buttons = handler.get_buttons()
                 original_orientation = handler.get_original_orientation()
-                #-----------------旋转矩阵转欧拉角---------------------
+                #-----------------旋转矩阵转欧拉角(now 旋转向量)---------------------
                 r = R.from_matrix(original_orientation)
-                euler_angles = r.as_euler('xyz', degrees=True)
-                rpy_vr = np.array(np.mod(euler_angles + 180, 360) - 180)
-                #---------------------------------------------------
+                rotation_vector = r.as_rotvec()
+                # euler_angles = r.as_euler('xyz', degrees=True)
+                # rpy_vr = np.array(np.mod(euler_angles + 180, 360) - 180)
+                #-----------------获取VR手柄按键状态-------------------
                 A_button = buttons.get("A", [0])
                 B_button = buttons.get("B", [0])
                 right_trigger = buttons.get("rightTrig", [0])[0]
@@ -177,9 +175,10 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                     target_pose[1] = target_pose[1] + delta_pos[1]*0.1
                     target_pose[2] = target_pose[2] + delta_pos[2]*0.1
                     # TODO: 目前VR的旋转是用绝对值，xyz是增量，其原因是VR的旋转增量没有调通
-                    target_pose[3] = np.deg2rad(rpy_vr[0])
-                    target_pose[4] = np.deg2rad(rpy_vr[1])
-                    target_pose[5] = np.deg2rad(rpy_vr[2])
+                    # target_pose[3] = np.deg2rad(rpy_vr[0])
+                    # target_pose[4] = np.deg2rad(rpy_vr[1])
+                    # target_pose[5] = np.deg2rad(rpy_vr[2])
+                    target_pose[3:6] = rotation_vector  # 使用旋转向量更新旋转部分
                 #---------------------------------------------------
                 #---------------电磁铁状态转换控制---------------------
                 if right_trigger >= 0.8 and not last_magnet_state:

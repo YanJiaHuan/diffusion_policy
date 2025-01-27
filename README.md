@@ -471,12 +471,13 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 
 
 * [更改]real_env.py [RealEnv->PiperRealEnv]
-    * [BUG|未解决|01-23-2025]采集的magnet_state 永远是0.0,不会变成1.0,
+    * [[BUG](https://github.com/YanJiaHuan/diffusion_policy/commit/cb439a962567fe1422409450fcb564f7dabe6ee9)|已解决|01-24-2025]采集的magnet_state 永远是0.0,不会变成1.0。 后续定位到问题出自数据采集的逻辑是多线程，pipercontroller 继承mp.process,导致在这个类里的所有实例化的类都没法简单的使用，因为每一个线程都会实例化一个类(如BluetoothMagnetController),导致状态改变无法被保存，之后将整个控制逻辑直接由PiperInterpolationController进行管理，然后在控制esp32端使用commnd 发送指令到input_queue里，通过测试，发现action和magnet_state都能被合理保存。
 
-* [新增]新加esp32_magnet.py 内含一个电磁铁模块的控制，状态记录类
+* [新增|废弃]新加esp32_magnet.py 内含一个电磁铁模块的控制，状态记录类
 
 * [新增]our_data_collection.py rebuild一套数据采集脚本
-    * [[更改](https://github.com/YanJiaHuan/diffusion_policy/commit/920ab1041cb37a5b91b828b7f0421f8f8fc27a08)|01-23-2025] Action 之前是按np.float32采集的，现在对齐原本的代码，用float64采集 
+    * [[更改](https://github.com/YanJiaHuan/diffusion_policy/commit/920ab1041cb37a5b91b828b7f0421f8f8fc27a08)|01-23-2025] Action 之前是按np.float32采集的，现在对齐原本的代码，用float64采集
+    * [BUG|01-26-2025]发现DP原作者的schedule_waypoint插值，需要输入是旋转向量，目前给的是弧度的欧拉角，操作的不顺畅的原因可能出在这里。计划将欧拉角度表示转化成rotation_6d表示
 
 * [新增]diffusion_policy.config.task.TR3_pickplace_real.yaml
 原作者对于real world 的setup比较少，或者说没公开，所以一方面想要在真实世界完成流程，另一方面需要迁移到自己的机械臂需求上，需要写一些适配代码，以及适配config

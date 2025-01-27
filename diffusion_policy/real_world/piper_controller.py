@@ -9,6 +9,7 @@ from diffusion_policy.shared_memory.shared_memory_ring_buffer import SharedMemor
 from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryInterpolator
 from piper_sdk import C_PiperInterface
 import serial
+from scipy.spatial.transform import Rotation as R
 
 
 # ============================== #
@@ -199,7 +200,6 @@ class PiperInterpolationController(mp.Process):
 
     def schedule_waypoint(self, pose, target_time):
         pose = np.array(pose)
-            # Convert RX, RY, RZ to radians
         self.input_queue.put({
             'cmd': Command.SCHEDULE_WAYPOINT.value,
             'target_pose': pose,
@@ -311,13 +311,30 @@ class PiperInterpolationController(mp.Process):
             # main loop
             dt = 1. / self.frequency
             curr_pose_raw = self.piper.GetArmEndPoseMsgs()
+            # curr_pose = [
+            #     curr_pose_raw.end_pose.X_axis/1000000,
+            #     curr_pose_raw.end_pose.Y_axis/1000000,
+            #     curr_pose_raw.end_pose.Z_axis/1000000,
+            #     np.deg2rad(curr_pose_raw.end_pose.RX_axis/1000),
+            #     np.deg2rad(curr_pose_raw.end_pose.RY_axis/1000),
+            #     np.deg2rad(curr_pose_raw.end_pose.RZ_axis/1000)
+            # ]
+
+            x = curr_pose_raw.end_pose.X_axis / 1000000
+            y = curr_pose_raw.end_pose.Y_axis / 1000000
+            z = curr_pose_raw.end_pose.Z_axis / 1000000
+
+            # Euler angles in radians
+            roll = np.deg2rad(curr_pose_raw.end_pose.RX_axis / 1000)
+            pitch = np.deg2rad(curr_pose_raw.end_pose.RY_axis / 1000)
+            yaw = np.deg2rad(curr_pose_raw.end_pose.RZ_axis / 1000)
+
+            # Convert Euler angles to rotation vector
+            rotation_vector = R.from_euler('xyz', [roll, pitch, yaw]).as_rotvec()
+            # Construct curr_pose in the required format
             curr_pose = [
-                curr_pose_raw.end_pose.X_axis/1000000,
-                curr_pose_raw.end_pose.Y_axis/1000000,
-                curr_pose_raw.end_pose.Z_axis/1000000,
-                np.deg2rad(curr_pose_raw.end_pose.RX_axis/1000),
-                np.deg2rad(curr_pose_raw.end_pose.RY_axis/1000),
-                np.deg2rad(curr_pose_raw.end_pose.RZ_axis/1000)
+                x, y, z,
+                rotation_vector[0], rotation_vector[1], rotation_vector[2]
             ]
 
             curr_t = time.monotonic()
@@ -331,6 +348,9 @@ class PiperInterpolationController(mp.Process):
             while keep_running:
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
+                # Convert rotation vector to Euler angles
+                rotation_vector = pose_command[3:6]
+                euler_angles = R.from_rotvec(rotation_vector).as_euler('xyz', degrees=True)
                 magnet_state = self.current_magnet_state
                 magnet_state = np.array([magnet_state], dtype=np.float64)
 
@@ -338,15 +358,15 @@ class PiperInterpolationController(mp.Process):
                     int(pose_command[0]*1000000), 
                     int(pose_command[1]*1000000),
                     int(pose_command[2]*1000000),
-                    int(np.rad2deg(pose_command[3])*1000),
-                    int(np.rad2deg(pose_command[4])*1000),
-                    int(np.rad2deg(pose_command[5])*1000)
+                    int(euler_angles[0]*1000),     # RX in 0.001 degrees
+                    int(euler_angles[1]*1000),     # RY in 0.001 degrees
+                    int(euler_angles[2]*1000)      # RZ in 0.001 degrees
                 ]
                 # xyz的单位是mm，rpy的单位是度
                 self.piper.MotionCtrl_2(0x01, 0x00, int(self.max_pos_speed * 100),0x00)
                 self.piper.EndPoseCtrl(*scaled_pose)
                 # Maintain control loop frequency
-                time.sleep(max(0, (1 / self.frequency) - (time.monotonic() - t_now)))
+                # time.sleep(max(0, (1 / self.frequency) - (time.monotonic() - t_now)))
                 # update robot state
                 state = {
                     'ActualTCPPose': scaled_pose,

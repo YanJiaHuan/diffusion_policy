@@ -708,9 +708,6 @@ class PiperRealEnv:
         robot_obs = dict()
         for k, v in robot_obs_raw.items():
             robot_obs[k] = v[this_idxs]
-        #DEBUG
-        # print('DEBUG: robot_obs_raw', robot_obs_raw)
-        # print('DEBUG: last_robot_data', last_robot_data)
         # accumulate obs
         if self.obs_accumulator is not None:
             self.obs_accumulator.put(
@@ -729,7 +726,7 @@ class PiperRealEnv:
             timestamps: np.ndarray,
             stages: Optional[np.ndarray]=None
 ):      
-        # 现在这个actions是一个7维的向量，分别代表x,y,z,rx,ry,rz, magnet_state
+        # 现在actions是一个7维的向量，分别代表x,y,z,旋转向量(弧度制), magnet_state
         assert self.is_ready
         if not isinstance(actions, np.ndarray):
             actions = np.array(actions)
@@ -753,7 +750,6 @@ class PiperRealEnv:
             magnet_cmd = full_action[6]  
 
             # physically control the magnet
-            # self.robot.control_esp32(magnet_cmd)
             self.robot.input_queue.put({'cmd': Command.MAGNET.value, 'magnet_on': float(magnet_cmd)})
             pose = full_action[:6]
             target_time = new_timestamps[i]
