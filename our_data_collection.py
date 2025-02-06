@@ -161,15 +161,14 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 #------------------更新endpose状态---------------------
                 #获得当前机械臂状态
                 target_pose = env.get_robot_state()['ActualTCPPose']
-                #Scale机械臂位置信息，0.001mm->m, 0.001度->度
-                target_pose[0] = target_pose[0] / 1000000
-                target_pose[1] = target_pose[1] / 1000000
-                target_pose[2] = target_pose[2] / 1000000
-                target_pose[3] = target_pose[3] / 1000
-                target_pose[4] = target_pose[4] / 1000
-                target_pose[5] = target_pose[5] / 1000
+                # xyz in meters, roll pitch yaw in degrees
                 if freeze:
-                    pass
+                    # convert the euler into rotation vector back to robot controller
+                    target_pose[0] = target_pose[0]
+                    target_pose[1] = target_pose[1]
+                    target_pose[2] = target_pose[2]
+                    rotation_vector = R.from_euler('xyz', target_pose[3:6], degrees=True).as_rotvec()
+                    target_pose[3:6] = rotation_vector
                 else:
                     target_pose[0] = target_pose[0] + delta_pos[0]*0.1
                     target_pose[1] = target_pose[1] + delta_pos[1]*0.1

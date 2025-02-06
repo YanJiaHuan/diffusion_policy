@@ -3,7 +3,7 @@ import numbers
 import numpy as np
 import scipy.interpolate as si
 import scipy.spatial.transform as st
-
+import time
 def rotation_distance(a: st.Rotation, b: st.Rotation) -> float:
     return (b * a.inv()).magnitude()
 
@@ -206,3 +206,17 @@ class PoseTrajectoryInterpolator:
         if is_single:
             pose = pose[0]
         return pose
+    
+    def move_point(self, pose, curr_time=None):
+        """
+        Return a new PoseTrajectoryInterpolator with a single (time, pose) 
+        so that no interpolation is performed. 
+        If curr_time is None, use time.monotonic().
+        """
+        if curr_time is None:
+            curr_time = time.monotonic()
+
+        pose = np.array(pose, dtype=np.float64).reshape((1, 6))
+        times = np.array([curr_time], dtype=np.float64)
+
+        return PoseTrajectoryInterpolator(times=times, poses=pose)

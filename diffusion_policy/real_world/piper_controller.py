@@ -205,6 +205,7 @@ class PiperInterpolationController(mp.Process):
             'target_pose': pose,
             'target_time': target_time
         })
+    # [新增] move_point: 新增的高层API，直接put一个 MOVE_POINT 命令
     def move_point(self, pose):
         """Directly move to a specified pose without interpolation."""
         assert self.is_alive()
@@ -311,32 +312,18 @@ class PiperInterpolationController(mp.Process):
             # main loop
             dt = 1. / self.frequency
             curr_pose_raw = self.piper.GetArmEndPoseMsgs()
-            # curr_pose = [
-            #     curr_pose_raw.end_pose.X_axis/1000000,
-            #     curr_pose_raw.end_pose.Y_axis/1000000,
-            #     curr_pose_raw.end_pose.Z_axis/1000000,
-            #     np.deg2rad(curr_pose_raw.end_pose.RX_axis/1000),
-            #     np.deg2rad(curr_pose_raw.end_pose.RY_axis/1000),
-            #     np.deg2rad(curr_pose_raw.end_pose.RZ_axis/1000)
-            # ]
 
             x = curr_pose_raw.end_pose.X_axis / 1000000
             y = curr_pose_raw.end_pose.Y_axis / 1000000
             z = curr_pose_raw.end_pose.Z_axis / 1000000
 
-            # Euler angles in radians
+            # Convert the SDK’s Euler angles to radians.
+            # Note: The SDK outputs angles in 0.001 degrees, so divide by 1000 and convert to radians.
             roll = np.deg2rad(curr_pose_raw.end_pose.RX_axis / 1000)
             pitch = np.deg2rad(curr_pose_raw.end_pose.RY_axis / 1000)
             yaw = np.deg2rad(curr_pose_raw.end_pose.RZ_axis / 1000)
-
-            # Convert Euler angles to rotation vector
             rotation_vector = R.from_euler('xyz', [roll, pitch, yaw]).as_rotvec()
-            # Construct curr_pose in the required format
-            curr_pose = [
-                x, y, z,
-                rotation_vector[0], rotation_vector[1], rotation_vector[2]
-            ]
-
+            curr_pose = [x, y, z, rotation_vector[0], rotation_vector[1], rotation_vector[2]]
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
             pose_interp = PoseTrajectoryInterpolator(
@@ -348,28 +335,38 @@ class PiperInterpolationController(mp.Process):
             while keep_running:
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
+                curr_pose_raw = self.piper.GetArmEndPoseMsgs()
                 # Convert rotation vector to Euler angles
                 rotation_vector = pose_command[3:6]
                 euler_angles = R.from_rotvec(rotation_vector).as_euler('xyz', degrees=True)
                 magnet_state = self.current_magnet_state
                 magnet_state = np.array([magnet_state], dtype=np.float64)
 
+
+                new_pose = [
+                    pose_command[0],
+                    pose_command[1],
+                    pose_command[2],
+                    euler_angles[0],
+                    euler_angles[1],
+                    euler_angles[2]
+                ]
                 scaled_pose = [
-                    int(pose_command[0]*1000000), 
-                    int(pose_command[1]*1000000),
-                    int(pose_command[2]*1000000),
-                    int(euler_angles[0]*1000),     # RX in 0.001 degrees
-                    int(euler_angles[1]*1000),     # RY in 0.001 degrees
-                    int(euler_angles[2]*1000)      # RZ in 0.001 degrees
+                    int(new_pose[0] * 1000000),
+                    int(new_pose[1] * 1000000),
+                    int(new_pose[2] * 1000000),
+                    int(new_pose[3] * 1000),
+                    int(new_pose[4] * 1000),
+                    int(new_pose[5] * 1000)
                 ]
                 # xyz的单位是mm，rpy的单位是度
-                self.piper.MotionCtrl_2(0x01, 0x00, int(self.max_pos_speed * 100),0x00)
+                self.piper.MotionCtrl_2(0x01, 0x00, 100,0x00)
                 self.piper.EndPoseCtrl(*scaled_pose)
                 # Maintain control loop frequency
                 # time.sleep(max(0, (1 / self.frequency) - (time.monotonic() - t_now)))
                 # update robot state
                 state = {
-                    'ActualTCPPose': scaled_pose,
+                    'ActualTCPPose': new_pose,
                     'robot_receive_timestamp': time.time(),
                     'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }
@@ -419,7 +416,10 @@ class PiperInterpolationController(mp.Process):
                             last_waypoint_time=last_waypoint_time
                         )
                         last_waypoint_time = target_time
-
+                    elif cmd == Command.MOVE_POINT.value:
+                        # 直接用EndPoseCtrl走点，不做插值
+                        target_pose = command['target_pose']
+                        pose_interp = pose_interp.move_point(target_pose)
                     elif cmd == Command.MAGNET.value:
                         magnet_on = command['magnet_on']
                         self.control_esp32(magnet_on)

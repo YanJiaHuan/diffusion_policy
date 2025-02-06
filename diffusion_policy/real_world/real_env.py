@@ -569,7 +569,7 @@ class PiperRealEnv:
             can_interface=can_interface,
             bt_port=self.bt_port,
             bt_baud_rate=self.bt_baud_rate,
-            frequency=10,  # Adjusted frequency for Piper
+            frequency=20,  # Adjusted frequency for Piper
             lookahead_time=0.1,
             gain=300,
             max_pos_speed=max_pos_speed*cube_diag,
@@ -746,6 +746,7 @@ class PiperRealEnv:
 
         # schedule waypoints
         for i in range(len(new_actions)):
+            # print(new_actions[i])
             full_action = new_actions[i]
             magnet_cmd = full_action[6]  
 
@@ -758,6 +759,9 @@ class PiperRealEnv:
                 pose=pose,
                 target_time=target_time
             )
+            # self.robot.move_point(
+            #     pose=pose
+            # )
 
         # record actions
         if self.action_accumulator is not None:
