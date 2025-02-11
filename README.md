@@ -469,6 +469,7 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
     x = x.reshape(-1, scale.shape[0])”`的报错，一开始一直在改dataset.py里面的代码，以为是magnet_state在用其他key的shape进行normalize，后来一直debug不出来，最后仔细看了眼报错，发现问题主要在于 magnet_state 这个数据，格式应该是(N,1)而不是(N,)，后续将采集数据(piper_controller)的代码里的magnet_state初始化为np.zeros(1)，问题解决。
     * [[更改](https://github.com/YanJiaHuan/diffusion_policy/commit/d0bc13dd31567cebc81c26169a3de937a93fa397)|01-23-2025]之前采数据存储的actualtcppose是用的直接发送给piper sdk的数据，单位是0.001mm,0.001度，现在直接使用pose_command,单位是m和弧度
     * [[BUG](https://github.com/YanJiaHuan/diffusion_policy/commit/78431b2df7b625345c4b4e0113aa0f78ab20657a)|02-6-2025]有几个重大bug，导致机械臂操作失误，出现大的碰撞或是问题。1. 其中一个是在piper controller 里，储存的state的单位是0.001mm,然后our_data_copllection 其实是需要通过robot.get_all_state去读取当前位姿信息的，所以在那为了通过VR的姿态更新机械臂的姿态，有一个单位换算的过程，之前是分别除了1e6/1e3,但是在某次改动后，想要保存以米为单位的数据，而没有改然后our_data_copllection的代码，导致本来就很小的数字，又被除了1e6/1e3，这也导致发给机械臂的位姿一下子变成几乎是0,0,0,0,0,0，从而机械臂发生碰撞。2. 将move_point控制方式改回schedule_waypoint。3. our_data_collection里当松开a键时，应该是发送从机械臂里读到的姿态，但是由于保存的是欧拉角的旋转表示，在按下a键的情况下，处理成了旋转向量，但是忽略了松开a键的情况，导致错误的旋转表示被不停的传入插值器，也导致机械臂出现诡异的姿态。
+    * [BUG|02-11-2025] 初始关节角度更换后，发现机械臂不能动，目前没找到原因
 
 * [更改]real_env.py [RealEnv->PiperRealEnv]
     * [[BUG](https://github.com/YanJiaHuan/diffusion_policy/commit/cb439a962567fe1422409450fcb564f7dabe6ee9)|已解决|01-24-2025]采集的magnet_state 永远是0.0,不会变成1.0。 后续定位到问题出自数据采集的逻辑是多线程，pipercontroller 继承mp.process,导致在这个类里的所有实例化的类都没法简单的使用，因为每一个线程都会实例化一个类(如BluetoothMagnetController),导致状态改变无法被保存，之后将整个控制逻辑直接由PiperInterpolationController进行管理，然后在控制esp32端使用commnd 发送指令到input_queue里，通过测试，发现action和magnet_state都能被合理保存。
@@ -522,6 +523,11 @@ sudo rfcomm bind /dev/esp32_electromegnet 3C:8A:1F:A0:C0:A6
 开始用oculus quest2 控制piper 机械臂进行数据采集，按下A按键
 ```shell
 python our_data_collection.py 
+```
+
+视检采集的数据
+```shell
+python our_test/zarr_checker2.py
 ```
 
 * 训练

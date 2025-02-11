@@ -93,5 +93,5 @@ def explore_and_plot_zarr(zarr_path):
                 print(f"    No plotting function defined for group: {key}")
 
 # 示例用法
-zarr_file_path = "/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test2/replay_buffer.zarr"
+zarr_file_path = "/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark/replay_buffer.zarr"
 explore_and_plot_zarr(zarr_file_path)

@@ -45,6 +45,11 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
     last_magnet_state = False
     bt_port='/dev/rfcomm0'
     baud_rate=115200
+    #-----------------------------------------------------------------
+    # Set scale factors for joystick increments.
+    scale_xy = 0.01  # maximum movement (in meters) per control cycle at full deflection
+    scale_z = 0.01   # movement in z per cycle when the button is pressed
+    #-----------------------------------------------------------------
     with SharedMemoryManager() as shm_manager:
         with KeystrokeCounter() as key_counter, \
             PiperRealEnv(
@@ -136,48 +141,32 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 cv2.pollKey()
 
                 precise_wait(t_sample)
-                # get teleop command
-                increment = handler.get_increment()
-                buttons = handler.get_buttons()
-                original_orientation = handler.get_original_orientation()
-                #-----------------旋转矩阵转欧拉角(now 旋转向量)---------------------
-                r = R.from_matrix(original_orientation)
-                rotation_vector = r.as_rotvec()
-                # euler_angles = r.as_euler('xyz', degrees=True)
-                # rpy_vr = np.array(np.mod(euler_angles + 180, 360) - 180)
                 #-----------------获取VR手柄按键状态-------------------
-                A_button = buttons.get("A", [0])
-                B_button = buttons.get("B", [0])
+                buttons = handler.get_buttons()
+                right_js = buttons.get("rightJS", [0.0, 0.0])
+                A_pressed = buttons.get("A", 0)
+                B_pressed = buttons.get("B", 0)
                 right_trigger = buttons.get("rightTrig", [0])[0]
-                delta_pos = increment['position']
                 #---------------------------------------------------
-                # 判断是否按下A键，按下A，机械臂允许移动
-                #---------------------------------------------------
-                if A_button:
-                    freeze = False
-                else:
-                    freeze = True
+                # Compute increments from joystick.
+                dx = right_js[1] * scale_xy
+                dy = right_js[0] * scale_xy
+                # Use B to increase z and A to decrease z.
+                dz = 0.0
+                if B_pressed:
+                    dz = scale_z
+                elif A_pressed:
+                    dz = -scale_z
                 #----------------------------------------------------
                 #------------------更新endpose状态---------------------
                 #获得当前机械臂状态
                 target_pose = env.get_robot_state()['ActualTCPPose']
                 # xyz in meters, roll pitch yaw in degrees
-                if freeze:
-                    # convert the euler into rotation vector back to robot controller
-                    target_pose[0] = target_pose[0]
-                    target_pose[1] = target_pose[1]
-                    target_pose[2] = target_pose[2]
-                    rotation_vector = R.from_euler('xyz', target_pose[3:6], degrees=True).as_rotvec()
-                    target_pose[3:6] = rotation_vector
-                else:
-                    target_pose[0] = target_pose[0] + delta_pos[0]*0.1
-                    target_pose[1] = target_pose[1] + delta_pos[1]*0.1
-                    target_pose[2] = target_pose[2] + delta_pos[2]*0.1
-                    # TODO: 目前VR的旋转是用绝对值，xyz是增量，其原因是VR的旋转增量没有调通
-                    # target_pose[3] = np.deg2rad(rpy_vr[0])
-                    # target_pose[4] = np.deg2rad(rpy_vr[1])
-                    # target_pose[5] = np.deg2rad(rpy_vr[2])
-                    target_pose[3:6] = rotation_vector  # 使用旋转向量更新旋转部分
+                target_pose[0] += dx
+                target_pose[1] += dy
+                target_pose[2] += dz
+                rotation_vector = R.from_euler('xyz', target_pose[3:6], degrees=True).as_rotvec()
+                target_pose[3:6] = rotation_vector
                 #---------------------------------------------------
                 #---------------电磁铁状态转换控制---------------------
                 if right_trigger >= 0.8 and not last_magnet_state:

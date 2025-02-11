@@ -66,7 +66,6 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
         with PiperRealEnv(
             output_dir=output_dir, 
             can_interface = can_interface,
-            magnet_controll = True,
             # recording resolution
             obs_image_resolution=obs_res,
             frequency=frequency,

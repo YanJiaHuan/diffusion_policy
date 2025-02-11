@@ -296,7 +296,17 @@ class PiperInterpolationController(mp.Process):
                 pass #TODO add init joints
             if self.reset:
                 self.piper.MotionCtrl_2(0x01, 0x01, 30, 0x00) #角度控制模式
+                # position = [
+                #     -0.0296,
+                #     0.7135,
+                #     -1.0597,
+                #     -0.0159,
+                #     1.2376,
+                #     1.0212,
+                #     0.01
+                #     ]
                 position = [-0.012, 0.607, -0.587, 0.091, 0.376, 0.524, 0.01]
+
                 factor = 57324.840764 #1000*180/3.14
                 joint_0 = round(position[0]*factor)
                 joint_1 = round(position[1]*factor)
@@ -336,6 +346,8 @@ class PiperInterpolationController(mp.Process):
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
                 curr_pose_raw = self.piper.GetArmEndPoseMsgs()
+
+                joint = self.piper.GetArmJointMsgs()
                 # Convert rotation vector to Euler angles
                 rotation_vector = pose_command[3:6]
                 euler_angles = R.from_rotvec(rotation_vector).as_euler('xyz', degrees=True)
@@ -405,7 +417,7 @@ class PiperInterpolationController(mp.Process):
                     elif cmd == Command.SCHEDULE_WAYPOINT.value:
                         target_pose = command['target_pose']
                         target_time = float(command['target_time'])
-                        target_time = time.monotonic() - time.time() + target_time
+                        target_time = time.monotonic() - time.time() + target_time                        
                         curr_time = t_now + dt
                         pose_interp = pose_interp.schedule_waypoint(
                             pose=target_pose,
