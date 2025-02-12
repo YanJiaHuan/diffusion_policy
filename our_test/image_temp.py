@@ -1,33 +1,48 @@
-
-
-from PIL import Image
+import matplotlib.pyplot as plt
 import numpy as np
 
-# 1. Open the JPG (no real alpha in it, so we create our own)
-img = Image.open("/home/zcai/jh_workspace/Files/WechatIMG123.jpg").convert("RGBA")
+# Data provided
+model_structure = ['resnet18+transformer', 'fpn+transformer']
+demos = [10, 50, 100, 200, 330]
+steps = [20, 36, 52, 91, 148]
+success_resnet18 = [0, 48, 63, 68, 74]
+success_fpn = [0, 50, 60, 65, 70]
 
-# 2. Convert to NumPy array
-data = np.array(img)  # shape: (H, W, 4)
+# Plotting
+fig, ax1 = plt.subplots(figsize=(10, 6))
 
-# Separate color channels
-red, green, blue, alpha = data.T
+# Plotting success rate as line
+ax1.plot(demos, success_resnet18, label="resnet18+transformer Success Rate", marker='o', linestyle='-', color='b')
+ax1.plot(demos, success_fpn, label="fpn+transformer Success Rate", marker='*', linestyle='-', color='g')
 
-# 3. Identify the background color. For example, if it's near-white:
-#    We can define a threshold, say everything above 240 is "white enough"
-threshold = 240
-white_areas = (red > threshold) & (green > threshold) & (blue > threshold)
+ax1.set_xlabel('Number of Demonstrations')
+ax1.set_ylabel('Success Rate (%)', color='black')
+ax1.tick_params(axis='y', labelcolor='black')
+ax1.set_xticks(demos)
+ax1.set_yticks(np.arange(0, 101, 10))
+ax1.grid(True)
 
-# 4. Make those white areas fully transparent
-data[..., 3][white_areas.T] = 0  # set alpha=0 where it's white
+# Create another y-axis to show training steps as bars
+ax2 = ax1.twinx()
 
-# 5. Convert back to a Pillow Image
-new_img = Image.fromarray(data)
+# Bar representation for training steps
+bar_width = 15  # Width of bars
+ax2.bar(np.array(demos) , steps, width=bar_width, label="Training Steps(k)", color='black', alpha=0.3, align='center')
 
-# 6. (Optional) Convert the color to grayscale but keep the alpha
-#    Split channels, convert the RGB to gray, re-merge with alpha
-r, g, b, a = new_img.split()
-gray = Image.merge("RGB", (r, g, b)).convert("L")
-final = Image.merge("RGBA", (gray, gray, gray, a))
+ax2.set_ylabel('Training Steps', color='black')
+ax2.tick_params(axis='y', labelcolor='black')
 
-# 7. Save as a PNG (supports transparency)
-final.save("/home/zcai/jh_workspace/Files/output_grayscale_with_transparency.png")
+# Adding title and legend
+# plt.title('Model Performance vs Number of Demonstrations and Training Steps')
+fig.tight_layout()  # Adjust layout
+ax1.legend(loc='upper left')
+ax2.legend(loc='upper right')
+
+
+
+# Save the plot
+output_path = "/home/zcai/jh_workspace/Files/date_quantity.png"
+plt.savefig(output_path)
+
+# Show the plot
+plt.show()
