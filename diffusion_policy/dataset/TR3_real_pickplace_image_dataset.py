@@ -39,6 +39,7 @@ class RealPickPlaceImageDataset(BaseImageDataset):
             val_ratio=0.0,
             max_train_episodes=None,
             delta_action=False,
+            rotation_rep = None
         ):
         assert os.path.isdir(dataset_path)
         
@@ -80,11 +81,14 @@ class RealPickPlaceImageDataset(BaseImageDataset):
                 shape_meta=shape_meta,
                 store=zarr.MemoryStore()
             )
+        if rotation_rep == 'rotation_6d':
+            self.action_dim = 10
+            self.robot_state_dim = 9
         
         if delta_action:
             # replace action as relative to previous frame
             actions = replay_buffer['action'][:]
-            assert actions.shape[1] == 7 # should contain xyz,rpy and magnet cmd
+            assert actions.shape[1] == self.action_dim # should contain xyz,rpy and magnet cmd
             actions_diff = np.zeros_like(actions)
             episode_ends = replay_buffer.episode_ends[:]
             for i in range(len(episode_ends)):
@@ -240,11 +244,11 @@ def _get_replay_buffer(dataset_path, shape_meta, store):
             lowdim_keys.append(key)
             lowdim_shapes[key] = tuple(shape)
             if 'pose' in key:
-                assert tuple(shape) in [(6,)] # pose should be 6, as xyzrpy
+                assert tuple(shape) in [(9,)] # pose should be 6, as xyzrpy
     
     action_shape = tuple(shape_meta['action']['shape'])
     # assert action_shape in [(2,),(6,)]
-    assert action_shape in [(2,),(7,)] # modified from 6
+    assert action_shape in [(2,),(10,)] # modified from 6
 
     # load data
     cv2.setNumThreads(1)
@@ -258,10 +262,10 @@ def _get_replay_buffer(dataset_path, shape_meta, store):
         )
 
     # transform lowdim dimensions
-    if action_shape == (7,):
-        # 7D action space, controls X, Y, Z, Qx, Qy, Qz, magnet command
+    if action_shape == (10,):
+        # 7D action space, controls X, Y, Z, rotation_6d, magnet command
         zarr_arr = replay_buffer['action']
-        zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2,3,4,5,6])
+        zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2,3,4,5,6,7,8,9])
     print('lowdim_shapes:', lowdim_shapes)
     for key, shape in lowdim_shapes.items():
         print('key:', key)
@@ -269,10 +273,10 @@ def _get_replay_buffer(dataset_path, shape_meta, store):
             # only take X and Y
             zarr_arr = replay_buffer[key]
             zarr_resize_index_last_dim(zarr_arr, idxs=[0,1])
-        elif 'pose' in key and shape == (6,):
-            # only take X, Y, Z, Qx, Qy, Qz
+        elif 'pose' in key and shape == (9,):
+            # only take X, Y, Z, rotation_6d
             zarr_arr = replay_buffer[key]
-            zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2,3,4,5])
+            zarr_resize_index_last_dim(zarr_arr, idxs=[0,1,2,3,4,5,6,7,8])
 
         elif 'magnet_state' in key and shape == (1,):
             zarr_arr = replay_buffer[key]

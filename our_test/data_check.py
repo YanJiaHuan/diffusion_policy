@@ -69,7 +69,7 @@ def calculate_average_video_length(base_path):
 
 def check_magnet_state(base_path):
     'Check if the magnet state is always 0.0 for any episode'
-    zarr_file_path = os.path.join(base_path, 'replay_buffer.zarr')
+    zarr_file_path = os.path.join(base_path, 'origin_replay_buffer.zarr')
     data = load_zarr(zarr_file_path)
     magnet_state = data['magnet_state']
     episode_ends = data['episode_ends']
@@ -85,7 +85,7 @@ def check_magnet_state(base_path):
 
 def plot_data_for_random_episodes(base_path):
     'Randomly select 3 episodes and plot actions and robot states'
-    zarr_file_path = os.path.join(base_path, 'replay_buffer.zarr')
+    zarr_file_path = os.path.join(base_path, 'origin_replay_buffer.zarr')
     data = load_zarr(zarr_file_path)
     
     selected_episodes = random.sample(range(len(data['episode_ends']) - 1), 3)

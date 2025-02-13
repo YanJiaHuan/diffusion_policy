@@ -10,7 +10,7 @@ shape_meta: &shape_meta
       shape: ${task.image_shape} 
       type: rgb
     robot_eef_pose:
-      shape: [6]
+      shape: [9]
       type: low_dim
     magnet_state:
       shape: [1]
@@ -19,7 +19,7 @@ shape_meta: &shape_meta
     #   shape: [2]
     #   type: low_dim
   action: 
-    shape: [7] # robot eef pose + magnet state
+    shape: [10] # robot eef pose + magnet state
 
 task_name: &task_name pickplace #can
 dataset_type: &dataset_type mh #ph
@@ -38,7 +38,7 @@ dataset:
   pad_after: ${eval:'${n_action_steps}-1'}
   n_obs_steps: ${dataset_obs_steps}
   # abs_action: *abs_action
-  # rotation_rep: 'rotation_6d'
+  rotation_rep: 'rotation_6d'
   # use_legacy_normalizer: False
   delta_action: False # if True, the action will be converted to relative action by calling np.diff
   use_cache: True
