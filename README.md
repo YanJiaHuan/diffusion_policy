@@ -504,6 +504,8 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 
 * [新增]diffusion_policy.model.vision.__init__.py 方便调用
 
+* [新增]diffusion_policy.our_test 
+    * [新增]data_check.py --可视化数据，检查有无电磁铁失效问题，视频毁坏问题，以及反馈平均采集时长
 4. 使用方法
 
 * 连接机械臂
@@ -520,24 +522,26 @@ bash can_activate.sh can_piper 1000000 "1-5.3:1.0"
 sudo rfcomm bind /dev/esp32_electromegnet 3C:8A:1F:A0:C0:A6
 ```
 
-开始用oculus quest2 控制piper 机械臂进行数据采集，按下A按键
+开始用oculus quest2 控制piper 机械臂进行数据采集，按下A按键机械臂会跟随移动，钩扳机，会触发电磁铁on/off
 ```shell
 python our_data_collection.py 
 ```
+目前存储的Action里包括了x,y,z,roation vectors in radians, magnet command. Robot state 里包括了x,y,z,euler angle in degrees, 还有一个额外的magnet state 去表示电磁铁状态，注意！目前的action和state的旋转表示不一样，所以在模型训练时，要做转换。
 
 视检采集的数据
 ```shell
-python our_test/zarr_checker2.py
+python our_test/data_check.py
 ```
 
 * 训练
 ```shell
 HYDRA_FULL_ERROR=1 python train.py \
 --config-name=train_diffusion_TR3_real_hybrid_workspace \
-task.dataset_path=/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test \
-hydra.run.dir=/home/zcai/jh_workspace/diffusion_policy/data/our_training/test_1_21 \
+task.dataset_path=/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark \
+hydra.run.dir=/home/zcai/jh_workspace/diffusion_policy/data/our_training/clean_mark_2_11 \
 wandb.enable=False \
 training.resume=False \
+training.checkpoint_every=500 \
 dataloader.batch_size=1
 ```
 参数解释
@@ -551,3 +555,5 @@ training.resume:是否从断点接续训练，这个如果设置成True，需要
 ```shell
 python our_demo.py -m data/our_training/test_1_21/checkpoints/epoch=0150-train_loss=0.787.ckpt
 ```
+
+# Dataset

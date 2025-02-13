@@ -23,6 +23,7 @@ from diffusion_policy.real_world.esp32_magnet import magnet_controller_process
 from diffusion_policy.shared_memory.shared_memory_queue import Empty
 import multiprocessing as mp
 from diffusion_policy.real_world.piper_controller import Command
+from scipy.spatial.transform import Rotation as R
 
 DEFAULT_OBS_KEY_MAP = {
     # robot
@@ -743,7 +744,6 @@ class PiperRealEnv:
         new_actions = actions[is_new]
         new_timestamps = timestamps[is_new]
         new_stages = stages[is_new]
-
         # schedule waypoints
         for i in range(len(new_actions)):
             # print(new_actions[i])
