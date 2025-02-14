@@ -513,7 +513,7 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 cd /home/zcai/jh_workspace/piper_sdk 
 bash can_activate.sh can0 1000000
 sudo ethtool -i can0 | grep bus
-bash can_activate.sh can_piper 1000000 "1-5.3:1.0"
+bash can_activate.sh can_piper 1000000 "1-6:1.0"
 ```
 
 * 采集数据
@@ -530,8 +530,18 @@ python our_data_collection.py
 
 视检采集的数据
 ```shell
-python our_test/data_check.py
+python our_test/data_check.py #检查action和robot_eef_pose是否大致align
 ```
+
+```shell
+python our_test/rotation_6d_check.py #检查转换后的rotation_6d是否一致
+```
+
+* 数据处理
+```shell
+python our_test/rotation_transform.py #将action(旋转向量、弧度)和robot_eef_pose(欧拉角、角度)转换成rotation_6d的表示
+```
+
 
 * 训练
 ```shell
@@ -557,3 +567,4 @@ python our_demo.py -m data/our_training/test_1_21/checkpoints/epoch=0150-train_l
 ```
 
 # Dataset
+1. clean_mark: 第一版单摄像头马桶坐圈污渍清理，马克笔画圈代表污渍
