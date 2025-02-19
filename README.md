@@ -513,7 +513,7 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 cd /home/zcai/jh_workspace/piper_sdk 
 bash can_activate.sh can0 1000000
 sudo ethtool -i can0 | grep bus
-bash can_activate.sh can_piper 1000000 "1-6:1.0"
+bash can_activate.sh can_piper 1000000 "1-7:1.0"
 ```
 
 * 采集数据
@@ -563,7 +563,7 @@ training.resume:是否从断点接续训练，这个如果设置成True，需要
 
 * 推理
 ```shell
-python our_demo.py -m data/our_training/test_1_21/checkpoints/epoch=0150-train_loss=0.787.ckpt
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/clean_mark_2_13/latest.ckpt
 ```
 
 # Dataset

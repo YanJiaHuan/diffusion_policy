@@ -21,14 +21,13 @@ from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.policy.base_image_policy import BaseImagePolicy
 from diffusion_policy.real_world.real_inference_util import get_real_obs_resolution, get_real_obs_dict
 from diffusion_policy.common.pytorch_util import dict_apply
-
-
+from scipy.spatial.transform import Rotation as R
 
 # Launch Hyperparameters
 @click.command()
 @click.option('--checkpoint_path', '-m', required = True, type=str, help='Path to the model checkpoint')
 @click.option('--can_interface', '-c', default='can_piper', help="CAN interface to use.")
-@click.option('--output_dir', '-o', type=str, default ='./data/real_test', help='Output directory')
+@click.option('--output_dir', '-o', type=str, default ='./data/our_test/clean_mark', help='Output directory')
 @click.option('--frequency', '-f', type=int, default=10, help='Control frequency')
 @click.option('--steps_per_inference', '-s', type=int, default=6, help='Number of steps per inference')
 @click.option('--max_duration', '-d', type=int, default=1800, help='Max duration of the experiment')
@@ -111,6 +110,25 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
                     # get obs
                     print('get_obs')
                     obs = env.get_obs()
+                    #----------------------------------------------------#
+                    # Change the robot_eef_pose's rotation representation from euler to rotation_6d
+                    robot_eef_pose = obs['robot_eef_pose']
+                    # Process each timestep separately
+                    rotation_6d_list = []
+                    for i in range(robot_eef_pose.shape[0]):  # Iterating over both timesteps
+                        euler_angles_deg = robot_eef_pose[i, 3:]  # Get Euler angles for timestep i
+                        rotation_matrix = R.from_euler('xyz', euler_angles_deg, degrees=True).as_matrix()
+                        rotation_6d = rotation_matrix[:, :2].flatten()  # Extract 6D rotation (flattened)
+                        rotation_6d_list.append(rotation_6d)
+
+                    # Stack the 6D rotations for both timesteps
+                    rotation_6d_array = np.stack(rotation_6d_list)
+
+                    # Update the robot pose with the new 6D rotation representation
+                    robot_eef_pose = np.hstack((robot_eef_pose[:, :3], rotation_6d_array))  # Concatenate position and rotation_6d
+
+                    obs['robot_eef_pose'] = robot_eef_pose
+                    #----------------------------------------------------#
                     obs_timestamps = obs['timestamp']
                     # run inference
                     with torch.no_grad():
@@ -122,13 +140,14 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
                         result = policy.predict_action(obs_dict)
                         # this action starts from the first obs step
                         action = result['action'][0].detach().to('cpu').numpy()
-                        print('Inference latency:', time.time() - s)
+                        inference_latency = time.time() - s
+                        print('Inference latency:', inference_latency)
 
 
                     # deal with timing
                     # the same step actions are always the target for
                     action_timestamps = (np.arange(len(action), dtype=np.float64) + action_offset
-                            ) * dt + obs_timestamps[-1]
+                            ) * dt + obs_timestamps[-1] + inference_latency
                     action_exec_latency = 0.01
                     curr_time = time.time()
                     is_new = action_timestamps > (curr_time + action_exec_latency)
@@ -146,10 +165,34 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
 
                     
                     # execute actions
-                    print('send_actions', action)
+                    # need to convert each action's rotation representation from rotation_6d to roation_vector(in radians)
+                    new_actions = []
+                    for action_idx in range(len(action)):
+                        action_7d = action[action_idx]
+                        
+                        # Extract position, rotation_6d, and magnet_command
+                        position = action_7d[:3]  # First 3 values are position
+                        rotation_6d = action_7d[3:9]  # Next 6 values are rotation_6d
+                        magnet_command = action_7d[9]  # Last value is the magnet command
+
+                        # Transform 6D rotation to rotation matrix
+                        rotation_matrix = np.zeros((3, 3))
+                        rotation_matrix[:, :2] = rotation_6d.reshape(3, 2)
+                        
+                        # The third column is computed such that the matrix remains orthogonal
+                        rotation_matrix[:, 2] = np.cross(rotation_matrix[:, 0], rotation_matrix[:, 1])
+
+                        # Convert rotation matrix to rotation vector (axis-angle representation)
+                        rotation_vector = R.from_matrix(rotation_matrix).as_rotvec()
+
+                        # Update to new 7D action: position + rotation_vector + magnet command
+                        action_7d = np.concatenate([position, rotation_vector, [magnet_command]])
+
+                        # Append the updated action to the new_actions list
+                        new_actions.append(action_7d)
                     # make the last dim of each action in action to be 1.0
                     env.exec_actions(
-                        actions=action,
+                        actions=new_actions,
                         timestamps=action_timestamps
                     )
                     print(f"Submitted {len(action)} steps of actions.")

@@ -658,7 +658,7 @@ class PiperRealEnv:
     def get_obs(self) -> dict:
         "observation dict"
         assert self.is_ready
-
+        time.sleep(1)
         # get data
         # 30 Hz, camera_receive_timestamp
         k = math.ceil(self.n_obs_steps * (self.video_capture_fps / self.frequency))
@@ -745,6 +745,7 @@ class PiperRealEnv:
         new_timestamps = timestamps[is_new]
         new_stages = stages[is_new]
         # schedule waypoints
+        # print("exist_new_actions", new_actions)
         for i in range(len(new_actions)):
             # print(new_actions[i])
             full_action = new_actions[i]
