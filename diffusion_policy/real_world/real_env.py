@@ -658,7 +658,7 @@ class PiperRealEnv:
     def get_obs(self) -> dict:
         "observation dict"
         assert self.is_ready
-        time.sleep(1)
+        # time.sleep(1)
         # get data
         # 30 Hz, camera_receive_timestamp
         k = math.ceil(self.n_obs_steps * (self.video_capture_fps / self.frequency))
