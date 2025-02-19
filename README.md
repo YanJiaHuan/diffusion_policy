@@ -506,6 +506,8 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 
 * [新增]diffusion_policy.our_test 
     * [新增]data_check.py --可视化数据，检查有无电磁铁失效问题，视频毁坏问题，以及反馈平均采集时长
+    * [新增]delete_episodes.py --删除单个/多个采集的数据集里的episode,并更新视频文件夹名字（需手动删除对应视频文件夹）
+
 4. 使用方法
 
 * 连接机械臂
@@ -537,11 +539,14 @@ python our_test/data_check.py #检查action和robot_eef_pose是否大致align
 python our_test/rotation_6d_check.py #检查转换后的rotation_6d是否一致
 ```
 
-* 数据处理
+* 数据集处理
 ```shell
 python our_test/rotation_transform.py #将action(旋转向量、弧度)和robot_eef_pose(欧拉角、角度)转换成rotation_6d的表示
 ```
 
+```shell
+python our_test/delete_episodes.py --base-path /home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark_v2 --episodes 2 #删除特定的episode，比如想删掉episode2, 可以手动删除视频文件夹2,然后run这个脚本，会自动删除episode2 所对应的数据，并更新video folder的名字
+```
 
 * 训练
 ```shell
