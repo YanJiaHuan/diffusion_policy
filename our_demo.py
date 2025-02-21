@@ -27,7 +27,7 @@ from scipy.spatial.transform import Rotation as R
 @click.command()
 @click.option('--checkpoint_path', '-m', required = True, type=str, help='Path to the model checkpoint')
 @click.option('--can_interface', '-c', default='can_piper', help="CAN interface to use.")
-@click.option('--output_dir', '-o', type=str, default ='./data/our_test/clean_mark', help='Output directory')
+@click.option('--output_dir', '-o', type=str, default ='./data/our_test/clean_mark_v2', help='Output directory')
 @click.option('--frequency', '-f', type=int, default=10, help='Control frequency')
 @click.option('--steps_per_inference', '-s', type=int, default=6, help='Number of steps per inference')
 @click.option('--max_duration', '-d', type=int, default=1800, help='Max duration of the experiment')
@@ -60,6 +60,11 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
     dt = 1/frequency
     obs_res = get_real_obs_resolution(cfg.task.shape_meta)
     n_obs_steps = cfg.n_obs_steps
+
+    # Initialize magnet state variables
+    magnet_state = False
+    last_magnet_state = False
+
 
     with SharedMemoryManager() as shm_manager:
         with PiperRealEnv(
@@ -190,7 +195,17 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
 
                         # Append the updated action to the new_actions list
                         new_actions.append(action_7d)
-                    # make the last dim of each action in action to be 1.0
+                        
+                    # Apply magnet state filtering logic
+                    for action_7d in new_actions:
+                        if action_7d[6] >= 0.8 and not last_magnet_state:
+                            magnet_state = not magnet_state
+                            last_magnet_state = True
+                        elif action_7d[6] < 0.8:
+                            last_magnet_state = False
+                        action_7d[6] = 1.0 if magnet_state else 0.0
+
+
                     env.exec_actions(
                         actions=new_actions,
                         timestamps=action_timestamps

@@ -260,7 +260,7 @@ class PiperInterpolationController(mp.Process):
 
         try:
             if int(magnet_on) == 1:
-                print("[Electromagnet] Turning electromagnet ON.")
+                # print("[Electromagnet] Turning electromagnet ON.")
                 self.bt_connection.write(b'1')
                 self.current_magnet_state = 1.0
             else:

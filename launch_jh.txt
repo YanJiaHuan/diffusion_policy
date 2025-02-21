@@ -22,3 +22,30 @@ training.resume=True \
 training.checkpoint_every=50 \
 logging.name=clean_mark_2_13 \
 dataloader.batch_size=160
+
+02-19-2025
+HYDRA_FULL_ERROR=1 python train.py \
+--config-name=train_diffusion_TR3_real_hybrid_workspace \
+task.dataset_path=/home/h666/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark_v2 \
+hydra.run.dir=/home/h666/jh_workspace/diffusion_policy/data/our_training/clean_mark_v2_2_19 \
+wandb.enable=True \
+training.resume=True \
+training.checkpoint_every=50 \
+logging.name=clean_mark_2_19 \
+dataloader.batch_size=160
+
+02-20-2025
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/clean_mark_v2_2_19/latest.ckpt
+
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/clean_mark_2_13/latest.ckpt
+
+4090:
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python train.py \
+--config-name=train_diffusion_TR3_real_hybrid_workspace \
+task.dataset_path=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_collected_data/clean_mark_v2 \
+hydra.run.dir=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_training/clean_mark_v2_2_20 \
+wandb.enable=True \
+training.resume=True \
+training.checkpoint_every=50 \
+logging.name=clean_mark_v2_2_20 \
+dataloader.batch_size=160

@@ -507,7 +507,6 @@ DP原作者用了一个controller作为模型输出action，到机械臂驱动ac
 * [新增]diffusion_policy.our_test 
     * [新增]data_check.py --可视化数据，检查有无电磁铁失效问题，视频毁坏问题，以及反馈平均采集时长
     * [新增]delete_episodes.py --删除单个/多个采集的数据集里的episode,并更新视频文件夹名字（需手动删除对应视频文件夹）
-
 4. 使用方法
 
 * 连接机械臂
@@ -550,20 +549,23 @@ python our_test/delete_episodes.py --base-path /home/zcai/jh_workspace/diffusion
 
 * 训练
 ```shell
-HYDRA_FULL_ERROR=1 python train.py \
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python train.py \
 --config-name=train_diffusion_TR3_real_hybrid_workspace \
-task.dataset_path=/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark \
-hydra.run.dir=/home/zcai/jh_workspace/diffusion_policy/data/our_training/clean_mark_2_11 \
-wandb.enable=False \
-training.resume=False \
-training.checkpoint_every=500 \
-dataloader.batch_size=1
+task.dataset_path=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_collected_data/clean_mark_v2 \
+hydra.run.dir=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_training/clean_mark_v2_2_20 \
+wandb.enable=True \
+training.resume=True \
+training.checkpoint_every=50 \
+logging.name=clean_mark_v2_2_20 \
+dataloader.batch_size=160
 ```
 参数解释
 ```markdown
-hydra.run.dir:模型存储路径
-wandb.enable:是否需要启动wandb,一般测试的时候选择False
-training.resume:是否从断点接续训练，这个如果设置成True，需要在hydra.run.dir这个路径有checkpoints/latest.ckpt
+hydra.run.dir: 模型存储路径
+wandb.enable: 是否需要启动wandb,一般测试的时候选择False
+training.resume: 是否从断点接续训02-21-202502-21-2025练，这个如果设置成True，需要在hydra.run.dir这个路径有checkpoints/latest.ckpt
+logging.name: wandb 上的run name
+training.checkpoint_every： 每多少个epoch保存一个checkpoint
 ```
 
 * 推理
