@@ -21,18 +21,20 @@ def load_zarr(replay_buffer_path):
 
 # Function to delete an episode from the dataset
 def delete_episode(data, index):
-    'Delete the episode with the given index from the dataset'
+    'delete the episode with the given index from the dataset'
     this_episode_ends = data['episode_ends'][index]
     this_episode_start = 0 if index == 0 else data['episode_ends'][index - 1] + 1
     this_episode_length = this_episode_ends - this_episode_start + 1
     
-    # Delete the data for the specified episode
+    # delete the data
     data['actions'] = np.delete(data['actions'], range(this_episode_start, this_episode_ends + 1), axis=0)
     data['robot_eef_pose'] = np.delete(data['robot_eef_pose'], range(this_episode_start, this_episode_ends + 1), axis=0)
     data['timestamps'] = np.delete(data['timestamps'], range(this_episode_start, this_episode_ends + 1), axis=0)
+    data['robot_eef_pose_vel'] = np.delete(data['robot_eef_pose_vel'], range(this_episode_start, this_episode_ends + 1), axis=0)
     data['stage'] = np.delete(data['stage'], range(this_episode_start, this_episode_ends + 1), axis=0)
-    data['magnet_state'] = np.delete(data['magnet_state'], range(this_episode_start, this_episode_ends + 1), axis=0) if data['magnet_state'] is not None else None
-    # Update episode_ends
+    data['robot_gripper_qpos'] = np.delete(data['robot_gripper_qpos'], range(this_episode_start, this_episode_ends + 1), axis=0)
+    
+    # update episode_ends
     data['episode_ends'] = np.delete(data['episode_ends'], index)
     if index < len(data['episode_ends']):
         for i in range(index, len(data['episode_ends'])):

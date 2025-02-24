@@ -115,6 +115,7 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
                     # get obs
                     print('get_obs')
                     obs = env.get_obs()
+                    # time.sleep(0.5)
                     #----------------------------------------------------#
                     # Change the robot_eef_pose's rotation representation from euler to rotation_6d
                     robot_eef_pose = obs['robot_eef_pose']

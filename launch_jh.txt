@@ -49,3 +49,44 @@ training.resume=True \
 training.checkpoint_every=50 \
 logging.name=clean_mark_v2_2_20 \
 dataloader.batch_size=160
+
+02-21-2025
+4090:
+
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python train.py \
+--config-name=train_diffusion_TR3_real_hybrid_workspace \
+task.dataset_path=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_collected_data/pickplace \
+hydra.run.dir=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_training/pickplace_60_2_21 \
+wandb.enable=True \
+training.resume=True \
+training.checkpoint_every=50 \
+logging.name=pickplace_60_2_21 \
+dataloader.batch_size=160
+
+02-24-2025
+测试：
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/clean_mark_v2_2_21/latest.ckpt
+
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/pickpalce_2_21/latest.ckpt
+
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/pickpalce_2_21/epoch=0300-train_loss=0.084.ckpt
+
+训练测试
+HYDRA_FULL_ERROR=1 python train.py \
+--config-name=train_diffusion_TR3_real_hybrid_workspace \
+task.dataset_path=/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/pickplace \
+hydra.run.dir=/home/zcai/jh_workspace/diffusion_policy/data/our_training/pickplace_test \
+wandb.enable=False \
+training.resume=True \
+training.checkpoint_every=10 \
+logging.name=pickpalce_2_24_test \
+dataloader.batch_size=16
+
+python our_test/delete_episodes.py -p /home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/pickplace_v2 -e 56
+
+python diffusion_policy/our_utils/dataset_processing.py -p /home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/pickplace_v2 -f 3
+
+数据转换
+python our_test/
+
+训练

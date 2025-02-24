@@ -74,9 +74,13 @@ def check_magnet_state(base_path):
     magnet_state = data['magnet_state']
     episode_ends = data['episode_ends']
     non_working_episodes = []
-    for i in range(len(episode_ends) - 1):
-        start_idx = episode_ends[i]
-        end_idx = episode_ends[i + 1]
+    for i in range(len(episode_ends)):
+        if i == 0:
+            start_idx = 0
+            end_idx = episode_ends[i]
+        else:
+            start_idx = episode_ends[i-1]
+            end_idx = episode_ends[i]
         episode_magnet_state = magnet_state[start_idx:end_idx]
         if np.all(episode_magnet_state == 0.0):
             non_working_episodes.append(i)
@@ -133,5 +137,5 @@ def main(base_path):
     print("All tasks completed.")
 
 if __name__ == "__main__":
-    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark'  # Update this to the actual base path
+    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/pickplace_v2'  # Update this to the actual base path
     main(base_path)

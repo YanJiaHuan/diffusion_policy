@@ -28,6 +28,9 @@ from diffusion_policy.common.json_logger import JsonLogger
 from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
 from diffusion_policy.model.diffusion.ema_model import EMAModel
 from diffusion_policy.model.common.lr_scheduler import get_scheduler
+from diffusion_policy.our_utils.visual_results import (plot_trajectories,
+                                         plot_avg_mse_with_betas)
+
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -247,6 +250,7 @@ class TrainDiffusionTransformerHybridWorkspace(BaseWorkspace):
                         pred_action = result['action_pred']
                         mse = torch.nn.functional.mse_loss(pred_action, gt_action)
                         step_log['train_action_mse_error'] = mse.item()
+                        plot_trajectories(gt_action,pred_action,self.epoch,self.output_dir)
                         del batch
                         del obs_dict
                         del gt_action
