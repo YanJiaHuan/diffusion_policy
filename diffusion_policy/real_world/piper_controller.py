@@ -82,6 +82,7 @@ class PiperInterpolationController(mp.Process):
         self.soft_real_time = soft_real_time
         self.verbose = verbose
         self.reset = reset
+        self.prev_pose = None
 
         #---------------Magnet Controller----------------
         self.bt_port = bt_port
@@ -96,10 +97,9 @@ class PiperInterpolationController(mp.Process):
         # Input Queue
         example = {
             'cmd': Command.SERVOL.value,
-            'target_pose': np.zeros((6,), dtype=np.float64),
+            'target_pose': np.zeros((7,), dtype=np.float64),
             'duration': 0.0,
             'target_time': 0.0,
-            'magnet_on': 0.0
         }
         input_queue = SharedMemoryQueue.create_from_examples(
             shm_manager=shm_manager,
@@ -198,8 +198,9 @@ class PiperInterpolationController(mp.Process):
         }
         self.input_queue.put(message)
 
-    def schedule_waypoint(self, pose, target_time):
+    def schedule_waypoint(self, pose, target_time,round_level=3):
         pose = np.array(pose)
+        pose = np.round(pose,round_level)
         self.input_queue.put({
             'cmd': Command.SCHEDULE_WAYPOINT.value,
             'target_pose': pose,
@@ -333,8 +334,24 @@ class PiperInterpolationController(mp.Process):
             roll = np.deg2rad(curr_pose_raw.end_pose.RX_axis / 1000)
             pitch = np.deg2rad(curr_pose_raw.end_pose.RY_axis / 1000)
             yaw = np.deg2rad(curr_pose_raw.end_pose.RZ_axis / 1000)
+            self.prev_pose = [x, y, z, curr_pose_raw.end_pose.RX_axis / 1000, curr_pose_raw.end_pose.RY_axis / 1000, curr_pose_raw.end_pose.RZ_axis / 1000]
             rotation_vector = R.from_euler('xyz', [roll, pitch, yaw]).as_rotvec()
-            curr_pose = [x, y, z, rotation_vector[0], rotation_vector[1], rotation_vector[2]]
+            curr_magnet = self.current_magnet_state
+            curr_pose = [x, y, z, rotation_vector[0], rotation_vector[1], rotation_vector[2],curr_magnet]
+            new_pose = [
+                curr_pose_raw.end_pose.X_axis / 1000000,
+                curr_pose_raw.end_pose.Y_axis / 1000000,
+                curr_pose_raw.end_pose.Z_axis / 1000000,
+                curr_pose_raw.end_pose.RX_axis / 1000,
+                curr_pose_raw.end_pose.RY_axis / 1000,
+                curr_pose_raw.end_pose.RZ_axis / 1000
+            ]
+            state = {
+                    'ActualTCPPose': new_pose,
+                    'robot_receive_timestamp': time.time(),
+                    'ActualMagnetState': curr_magnet  # Add magnet state to the ring buffer
+                }
+            self.ring_buffer.put(state)
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
             pose_interp = PoseTrajectoryInterpolator(
@@ -346,16 +363,13 @@ class PiperInterpolationController(mp.Process):
             while keep_running:
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
-                curr_pose_raw = self.piper.GetArmEndPoseMsgs()
-
-                joint = self.piper.GetArmJointMsgs()
+                magnet_command = pose_command[6]
+                # Update magnet state
+                self.control_esp32(magnet_command)
                 # Convert rotation vector to Euler angles
                 rotation_vector = pose_command[3:6]
                 euler_angles = R.from_rotvec(rotation_vector).as_euler('xyz', degrees=True)
-                magnet_state = self.current_magnet_state
-                magnet_state = np.array([magnet_state], dtype=np.float64)
-
-
+                # Execute pending magnet commands whose target_time has been reached
                 new_pose = [
                     pose_command[0],
                     pose_command[1],
@@ -375,16 +389,37 @@ class PiperInterpolationController(mp.Process):
                 # xyz的单位是mm，rpy的单位是度
                 self.piper.MotionCtrl_2(0x01, 0x00, 100,0x00)
                 self.piper.EndPoseCtrl(*scaled_pose)
-                # Maintain control loop frequency
-                # time.sleep(max(0, (1 / self.frequency) - (time.monotonic() - t_now)))
-                # update robot state
+                # Update state
+                magnet_state = self.current_magnet_state
+                magnet_state = np.array([magnet_state], dtype=np.float64)
+                # curr_pose = self.piper.GetArmEndPoseMsgs()
+                # x = curr_pose.end_pose.X_axis / 1000000
+                # y = curr_pose.end_pose.Y_axis / 1000000
+                # z = curr_pose.end_pose.Z_axis / 1000000
+                # roll = curr_pose.end_pose.RX_axis / 1000
+                # pitch = curr_pose.end_pose.RY_axis / 1000
+                # yaw = curr_pose.end_pose.RZ_axis / 1000
+                # new_pose = [x, y, z, roll, pitch, yaw]
+                # new_pose = np.array(new_pose, dtype=np.float64)
+                # new_pose = np.round(new_pose, 3)
+                # # print(f"new_pose: {new_pose}")
+                # filtered_pose = [
+                #     self.low_pass_filter(new_pose[0], self.prev_pose[0]),
+                #     self.low_pass_filter(new_pose[1], self.prev_pose[1]),
+                #     self.low_pass_filter(new_pose[2], self.prev_pose[2]),
+                #     self.low_pass_filter(new_pose[3], self.prev_pose[3]),
+                #     self.low_pass_filter(new_pose[4], self.prev_pose[4]),
+                #     self.low_pass_filter(new_pose[5], self.prev_pose[5]),
+                # ]
+                # print(f"filtered_pose: {filtered_pose}")
+                # self.prev_pose = filtered_pose
+                # fetch command from queue
                 state = {
                     'ActualTCPPose': new_pose,
                     'robot_receive_timestamp': time.time(),
                     'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }
                 self.ring_buffer.put(state)
-                # fetch command from queue
                 try:
                     commands = self.input_queue.get_all()
                     n_cmd = len(commands['cmd'])
@@ -433,13 +468,9 @@ class PiperInterpolationController(mp.Process):
                         # 直接用EndPoseCtrl走点，不做插值
                         target_pose = command['target_pose']
                         pose_interp = pose_interp.move_point(target_pose)
-                    elif cmd == Command.MAGNET.value:
-                        magnet_on = command['magnet_on']
-                        self.control_esp32(magnet_on)
                     else:
                         keep_running = False
                         break
-
                 if iter_idx == 0:
                     self.ready_event.set()
 

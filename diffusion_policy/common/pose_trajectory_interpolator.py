@@ -12,8 +12,8 @@ def pose_distance(start_pose, end_pose):
     end_pose = np.array(end_pose)
     start_pos = start_pose[:3]
     end_pos = end_pose[:3]
-    start_rot = st.Rotation.from_rotvec(start_pose[3:])
-    end_rot = st.Rotation.from_rotvec(end_pose[3:])
+    start_rot = st.Rotation.from_rotvec(start_pose[3:6])
+    end_rot = st.Rotation.from_rotvec(end_pose[3:6])
     pos_dist = np.linalg.norm(end_pos - start_pos)
     rot_dist = rotation_distance(start_rot, end_rot)
     return pos_dist, rot_dist
@@ -37,12 +37,14 @@ class PoseTrajectoryInterpolator:
             assert np.all(times[1:] >= times[:-1])
 
             pos = poses[:,:3]
-            rot = st.Rotation.from_rotvec(poses[:,3:])
+            rot = st.Rotation.from_rotvec(poses[:,3:6])
+            magnet = poses[:,6]
 
             self.pos_interp = si.interp1d(times, pos, 
                 axis=0, assume_sorted=True)
             self.rot_interp = st.Slerp(times, rot)
-    
+            self.magnet_interp = si.interp1d(times, magnet,
+                axis=0, assume_sorted=True)
     @property
     def times(self) -> np.ndarray:
         if self.single_step:
@@ -56,9 +58,10 @@ class PoseTrajectoryInterpolator:
             return self._poses
         else:
             n = len(self.times)
-            poses = np.zeros((n, 6))
+            poses = np.zeros((n, 7))
             poses[:,:3] = self.pos_interp.y
-            poses[:,3:] = self.rot_interp(self.times).as_rotvec()
+            poses[:,3:6] = self.rot_interp(self.times).as_rotvec()
+            poses[:,6] = self.magnet_interp.y
             return poses
 
     def trim(self, 
@@ -191,7 +194,7 @@ class PoseTrajectoryInterpolator:
             is_single = True
             t = np.array([t])
         
-        pose = np.zeros((len(t), 6))
+        pose = np.zeros((len(t), 7))
         if self.single_step:
             pose[:] = self._poses[0]
         else:
@@ -199,9 +202,10 @@ class PoseTrajectoryInterpolator:
             end_time = self.times[-1]
             t = np.clip(t, start_time, end_time)
 
-            pose = np.zeros((len(t), 6))
+            pose = np.zeros((len(t), 7))
             pose[:,:3] = self.pos_interp(t)
-            pose[:,3:] = self.rot_interp(t).as_rotvec()
+            pose[:,3:6] = self.rot_interp(t).as_rotvec()
+            pose[:,6] = self.magnet_interp(t)
 
         if is_single:
             pose = pose[0]

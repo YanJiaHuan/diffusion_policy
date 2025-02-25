@@ -570,7 +570,7 @@ class PiperRealEnv:
             can_interface=can_interface,
             bt_port=self.bt_port,
             bt_baud_rate=self.bt_baud_rate,
-            frequency=20,  # Adjusted frequency for Piper
+            frequency=500,  # Adjusted frequency for Piper
             lookahead_time=0.1,
             gain=300,
             max_pos_speed=max_pos_speed*cube_diag,
@@ -748,15 +748,10 @@ class PiperRealEnv:
         for i in range(len(new_actions)):
             # print(new_actions[i])
             full_action = new_actions[i]
-            magnet_cmd = full_action[6]  
-
-            # physically control the magnet
-            self.robot.input_queue.put({'cmd': Command.MAGNET.value, 'magnet_on': float(magnet_cmd)})
-            pose = full_action[:6]
-            target_time = new_timestamps[i]
+            target_time = new_timestamps[i] 
 
             self.robot.schedule_waypoint(
-                pose=pose,
+                pose=full_action,
                 target_time=target_time
             )
             # self.robot.move_point(

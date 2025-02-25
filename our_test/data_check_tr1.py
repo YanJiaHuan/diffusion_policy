@@ -15,7 +15,6 @@ def load_zarr(replay_buffer_path):
         'robot_eef_pose': replay_buffer['data/robot_eef_pose'][:],
         'timestamps': replay_buffer['data/timestamp'][:],
         'episode_ends': replay_buffer['meta/episode_ends'][:],
-        'magnet_state': replay_buffer['data/magnet_state'][:] if 'data/magnet_state' in replay_buffer else None,
     }
     
     # Convert rotation vectors in radians to Euler angles in degrees
@@ -99,22 +98,22 @@ def plot_data_for_random_episodes(base_path):
         
         actions = data['actions'][start_idx:end_idx]
         robot_eef_pose = data['robot_eef_pose'][start_idx:end_idx]
-        magnet_state = data['magnet_state'][start_idx:end_idx] if data['magnet_state'] is not None else np.zeros((end_idx - start_idx, 1))
+        # magnet_state = data['magnet_state'][start_idx:end_idx] if data['magnet_state'] is not None else np.zeros((end_idx - start_idx, 1))
         
         fig, axes = plt.subplots(7, 1, figsize=(10, 20))
-        for dim in range(6):  # Only plot the first 6 dimensions for the robot state
+        for dim in range(7):  # Only plot the first 6 dimensions for the robot state
             axes[dim].plot(range(start_idx, end_idx), actions[:, dim], label=f'Action dim {dim}', linestyle='-', color='blue')
             axes[dim].plot(range(start_idx, end_idx), robot_eef_pose[:, dim], label=f'Robot State dim {dim}', linestyle='--', color='orange')
             axes[dim].set_title(f'Dim {dim} for Episode {episode_idx}', fontsize=10)
             axes[dim].legend(fontsize=8)
             axes[dim].grid(True)
         
-        # Plot magnet state as the 7th subplot
-        axes[6].plot(range(start_idx, end_idx), actions[:, 6], label='Magnet Command', color='blue', linestyle='-')
-        axes[6].plot(range(start_idx, end_idx), magnet_state, label='Magnet State', color='orange', linestyle='--')
-        axes[6].set_title(f'Magnet State for Episode {episode_idx}', fontsize=10)
-        axes[6].legend(fontsize=8)
-        axes[6].grid(True)
+        # # Plot magnet state as the 7th subplot
+        # axes[6].plot(range(start_idx, end_idx), actions[:, 6], label='Magnet Command', color='blue', linestyle='-')
+        # axes[6].plot(range(start_idx, end_idx), magnet_state, label='Magnet State', color='orange', linestyle='--')
+        # axes[6].set_title(f'Magnet State for Episode {episode_idx}', fontsize=10)
+        # axes[6].legend(fontsize=8)
+        # axes[6].grid(True)
         
         plt.tight_layout()
         plt.show()
@@ -123,13 +122,13 @@ def main(base_path):
     print(f"Processing dataset in {base_path}")
     
     # 1. Check for corrupted videos
-    check_corrupted_videos(base_path)
+    # check_corrupted_videos(base_path)
     
     # 2. Calculate average video length
-    calculate_average_video_length(base_path)
+    # calculate_average_video_length(base_path)
     
     # 3. Check magnet state for episodes
-    check_magnet_state(base_path)
+    # check_magnet_state(base_path)
     
     # 4. Plot actions and robot states for 3 random episodes
     plot_data_for_random_episodes(base_path)
@@ -137,5 +136,5 @@ def main(base_path):
     print("All tasks completed.")
 
 if __name__ == "__main__":
-    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/pickplace_v4'  # Update this to the actual base path
+    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data'  # Update this to the actual base path
     main(base_path)
