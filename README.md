@@ -576,3 +576,4 @@ python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/cl
 # Dataset
 1. clean_mark: 第一版单摄像头马桶坐圈污渍清理，马克笔画圈代表污渍
 2. clean_mark_v2: 第二版双摄像头（摄像头位置变化50/10次）马桶坐圈污渍（三个污渍）清理，马克笔画圈代表污渍
+3. clean_mark_v3: 第三版双摄像头（位置固定，wrist+side cam），马桶坐圈污渍(三个中的一个)清理，马克笔画圈代表污渍
