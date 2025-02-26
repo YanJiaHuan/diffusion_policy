@@ -570,7 +570,7 @@ class PiperRealEnv:
             can_interface=can_interface,
             bt_port=self.bt_port,
             bt_baud_rate=self.bt_baud_rate,
-            frequency=200,  # Adjusted frequency for Piper
+            frequency=500,  # Adjusted frequency for Piper
             lookahead_time=0.1,
             gain=300,
             max_pos_speed=max_pos_speed*cube_diag,
