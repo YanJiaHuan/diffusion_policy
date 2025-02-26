@@ -29,7 +29,7 @@ from scipy.spatial.transform import Rotation as R
 import math
 
 @click.command()
-@click.option('--output', '-o', default = 'data/our_collected_data/pickplace_v4', help="Directory to save demonstration dataset.")
+@click.option('--output', '-o', default = 'data/our_collected_data/test', help="Directory to save demonstration dataset.")
 @click.option('--can_interface', '-c', default='can_piper', help="CAN interface to use.")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
 @click.option('--reset', '-r', is_flag=True, default=True, help="Whether to initialize robot joint configuration in the beginning.")
