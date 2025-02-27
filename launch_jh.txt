@@ -154,3 +154,24 @@ training.resume=True \
 training.checkpoint_every=50 \
 logging.name=pickplace_test_2_2_26 \
 dataloader.batch_size=160
+
+CUDA_VISIBLE_DEVICES=2 HYDRA_FULL_ERROR=1 python train.py \
+--config-name=train_diffusion_TR3_real_hybrid_workspace \
+task.dataset_path=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_collected_data/clean_mark_v5 \
+hydra.run.dir=/home/kemove/workspaces/jh_workspace/tr3/diffusion_policy/data/our_training/clean_mark_v5_2_26 \
+wandb.enable=True \
+training.resume=True \
+training.checkpoint_every=50 \
+logging.name=clean_mark_v5_2_26 \
+dataloader.batch_size=160
+
+02-27-2025
+
+测试：
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/clean_mark_v5_2_26/latest.ckpt
+
+
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/pickplace_test_1_2_26/latest.ckpt
+
+
+python our_demo.py -m /home/zcai/jh_workspace/diffusion_policy/data/our_model/pickplace_test_2_2_26/latest.ckpt

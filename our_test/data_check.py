@@ -92,7 +92,7 @@ def plot_data_for_random_episodes(base_path):
     zarr_file_path = os.path.join(base_path, 'origin_replay_buffer.zarr')
     data = load_zarr(zarr_file_path)
     
-    selected_episodes = random.sample(range(len(data['episode_ends']) - 1), 10)
+    selected_episodes = random.sample(range(len(data['episode_ends']) - 1), 3)
     for episode_idx in selected_episodes:
         start_idx = data['episode_ends'][episode_idx]
         end_idx = data['episode_ends'][episode_idx + 1]
@@ -137,5 +137,5 @@ def main(base_path):
     print("All tasks completed.")
 
 if __name__ == "__main__":
-    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/pickplace_test_1'  # Update this to the actual base path
+    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark_v5'  # Update this to the actual base path
     main(base_path)

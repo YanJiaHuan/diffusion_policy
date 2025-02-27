@@ -104,5 +104,5 @@ def main(base_path):
     print("Transformation and saving completed.")
 
 if __name__ == "__main__":
-    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/pickplace_test_2'  # Update this to the actual base path
+    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark_v5'  # Update this to the actual base path
     main(base_path)
