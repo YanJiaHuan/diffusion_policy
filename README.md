@@ -437,8 +437,9 @@ This repository is released under the MIT license. See [LICENSE](LICENSE) for ad
 * Our [shared_memory](./diffusion_policy/shared_memory) data structures are heavily inspired by [shared-ndarray2](https://gitlab.com/osu-nrsg/shared-ndarray2).
 
 
-## Customized by JH
-这是一个基于原本DP代码仓库，往国产Piper机械臂做代码适配的临时代码仓库，但是会系统记录主要的代码变动以及使用方法
+## Customized by JH (dev1.0)
+这是一个基于原本DP代码仓库，往国产Piper机械臂做代码适配的临时代码仓库，但是会系统记录主要的代码变动以及使用方法。branch-dev1.0是完全基于以前DP
+的数据采集逻辑，主要包括在real_env 里call controller, 而在controller里用目标时间目标位置控制以及对xyz使用线性插值，对rotation用球面插值，在这一版本代码里，数据采集下来的robot_eef_pose,会来自piper_sdk或者command，但两种都没有训出来。
 
 1. 安装realsense
 ```shell
