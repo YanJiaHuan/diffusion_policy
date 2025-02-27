@@ -8,8 +8,11 @@ from rich.live import Live
 from rich.table import Table
 from rich.console import Console
 import math
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
 class OculusHandler:
-    def __init__(self, oculus_reader, right_controller=True, hz=60, use_filter=True, max_threshold=1.0,orientation_threshold = 0.01):
+    def __init__(self, oculus_reader, right_controller=True, hz=60, use_filter=True, max_threshold=1.0, orientation_threshold=0.01):
         self.oculus_reader = oculus_reader
         self.hz = hz
         self.use_filter = use_filter
@@ -17,68 +20,166 @@ class OculusHandler:
         self.raw_data = deque(maxlen=10)
         self.filtered_data = deque(maxlen=10)
 
-        # Configuration
         self.right_controller = right_controller
         self.controller_id = "r" if self.right_controller else "l"
 
+        # Changed orientation increment to 3-element vector
         self.increments = {
             'position': np.zeros(3),
-            'orientation': np.zeros((3, 3))
+            'orientation': np.zeros(3)
         }
         self.current_orientation = np.zeros((3, 3))
 
-        # Start the update thread
         self.thread = threading.Thread(target=self.run)
         self.thread.daemon = True
         self.thread.start()
 
+    #---------------------------------
+    @staticmethod
+    def rot_mat(angles, hom: bool = False):
+        """Given @angles (x, y, z), compute rotation matrix
+        Args:
+            angles: (x, y, z) rotation angles.
+            hom: whether to return a homogeneous matrix.
+        """
+        x, y, z = angles
+        Rx = np.array([[1, 0, 0], [0, np.cos(x), -np.sin(x)], [0, np.sin(x), np.cos(x)]])
+        Ry = np.array([[np.cos(y), 0, np.sin(y)], [0, 1, 0], [-np.sin(y), 0, np.cos(y)]])
+        Rz = np.array([[np.cos(z), -np.sin(z), 0], [np.sin(z), np.cos(z), 0], [0, 0, 1]])
+
+        R = Rz @ Ry @ Rx
+        if hom:
+            M = np.zeros((4, 4), dtype=np.float32)
+            M[:3, :3] = R
+            M[3, 3] = 1.0
+            return M
+        return R
+    @staticmethod
+    def mat2quat(rmat):
+        """
+        Converts given rotation matrix to quaternion.
+        Args:
+            rmat: 3x3 rotation matrix
+        Returns:
+            vec4 float quaternion angles
+        """
+        M = np.asarray(rmat).astype(np.float32)[:3, :3]
+
+        m00 = M[0, 0]
+        m01 = M[0, 1]
+        m02 = M[0, 2]
+        m10 = M[1, 0]
+        m11 = M[1, 1]
+        m12 = M[1, 2]
+        m20 = M[2, 0]
+        m21 = M[2, 1]
+        m22 = M[2, 2]
+        # symmetric matrix K
+        K = np.array(
+            [
+                [m00 - m11 - m22, np.float32(0.0), np.float32(0.0), np.float32(0.0)],
+                [m01 + m10, m11 - m00 - m22, np.float32(0.0), np.float32(0.0)],
+                [m02 + m20, m12 + m21, m22 - m00 - m11, np.float32(0.0)],
+                [m21 - m12, m02 - m20, m10 - m01, m00 + m11 + m22],
+            ]
+        )
+        K /= 3.0
+        # quaternion is Eigen vector of K that corresponds to largest eigenvalue
+        w, V = np.linalg.eigh(K)
+        inds = np.array([3, 0, 1, 2])
+        q1 = V[inds, np.argmax(w)]
+        if q1[0] < 0.0:
+            np.negative(q1, q1)
+        inds = np.array([1, 2, 3, 0])
+        return q1[inds]
+    @staticmethod
+    def quat_multiply(quaternion1, quaternion0):
+        """Return multiplication of two quaternions.
+        >>> q = quat_multiply([1, -2, 3, 4], [-5, 6, 7, 8])
+        >>> np.allclose(q, [-44, -14, 48, 28])
+        True
+        """
+        x0, y0, z0, w0 = quaternion0
+        x1, y1, z1, w1 = quaternion1
+        return np.array(
+            (
+                x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
+                -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
+                x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0,
+                -x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
+            )
+        )
+    @staticmethod
+    def quat_inverse(quaternion):
+        conjugate = np.array([-quaternion[0], -quaternion[1], -quaternion[2], quaternion[3]])
+        return conjugate / np.dot(quaternion, quaternion)
+
+
+
+    #---------------------------------
+
+
     def update(self):
         poses, buttons = self.oculus_reader.get_transformations_and_buttons()
-        if not poses:
-            print("No poses received.")
-            return
-
-        if self.controller_id not in poses:
-            print(f"No data for controller {self.controller_id}.")
+        if not poses or self.controller_id not in poses:
             return
 
         pose_matrix = poses[self.controller_id]
-        #print("pose_matrix:",pose_matrix)
         transformation_matrix = np.array([
             [0, 0, -1, 0],
             [-1, 0, 0, 0],
             [0, 1, 0, 0],
             [0, 0, 0, 1]
         ])
-
         pose_matrix = transformation_matrix @ pose_matrix
+
         position = pose_matrix[:3, 3]
         orientation_matrix = pose_matrix[:3, :3]
 
         self.raw_data.append((position, orientation_matrix))
 
         if len(self.raw_data) >= 3 and self.use_filter:
-            # Apply smoothing filter
             smoothed_positions = uniform_filter1d(
                 np.array([pos for pos, _ in self.raw_data]), size=3, axis=0)
             smoothed_orientations = uniform_filter1d(
                 np.array([ori for _, ori in self.raw_data]), size=3, axis=0)
-
             self.filtered_data.append((smoothed_positions[-1], smoothed_orientations[-1]))
         else:
             self.filtered_data.append((position, orientation_matrix))
 
         if len(self.filtered_data) >= 2:
-            self.increments['position'] = (
-                self.filtered_data[-1][0] - self.filtered_data[-2][0])
-            self.increments['orientation'] = (
-                self.filtered_data[-1][1] - self.filtered_data[-2][1])
+            self.increments['position'] = self.filtered_data[-1][0] - self.filtered_data[-2][0]
 
-            # Normalize increments to range -1 to 1
-            self.increments['position'] = np.clip(self.increments['position'] / self.max_threshold, -1, 1)
-            self.increments['orientation'] = np.clip(self.increments['orientation'] / self.max_threshold, -1, 1)
-            self.current_orientation = self.filtered_data[-1][1]
+            prev_ori = self.filtered_data[-2][1]
+            current_ori = self.filtered_data[-1][1]
 
+            # Coordinate adjustment from get_action
+            rot_adj = self.rot_mat([-np.pi/2, 0, np.pi/2])
+            adjusted_prev = rot_adj @ prev_ori
+            adjusted_current = rot_adj @ current_ori
+
+            prev_quat = self.mat2quat(adjusted_prev)
+            current_quat = self.mat2quat(adjusted_current)
+
+            delta_quat = self.quat_multiply(current_quat, self.quat_inverse(prev_quat))
+            delta_quat = delta_quat[[1, 0, 2, 3]]
+            delta_quat[0] *= -1
+            if delta_quat[3] < 0:
+                delta_quat *= -1
+
+            # Convert to rotation vector
+            r = R.from_quat(delta_quat)
+            rot_vec = r.as_rotvec()
+
+            self.increments['position'] = np.clip(
+                self.increments['position'] / self.max_threshold,
+                -1.0, 1.0
+            )
+            self.increments['orientation'] = np.clip(
+                rot_vec / self.max_threshold,
+                -1.0, 1.0
+            )
+            self.current_orientation = current_ori
     def get_increment(self):
         return self.increments
     

@@ -138,18 +138,22 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 precise_wait(t_sample)
                 # get teleop command
                 increment = handler.get_increment()
+                print('increment:', increment)
                 buttons = handler.get_buttons()
                 original_orientation = handler.get_original_orientation()
                 #-----------------旋转矩阵转欧拉角(now 旋转向量)---------------------
                 r = R.from_matrix(original_orientation)
                 rotation_vector = r.as_rotvec()
-                # euler_angles = r.as_euler('xyz', degrees=True)
+                euler_angles = r.as_euler('xyz', degrees=True)
+                print('euler_angles:', euler_angles)
                 # rpy_vr = np.array(np.mod(euler_angles + 180, 360) - 180)
                 #-----------------获取VR手柄按键状态-------------------
                 A_button = buttons.get("A", [0])
                 B_button = buttons.get("B", [0])
                 right_trigger = buttons.get("rightTrig", [0])[0]
                 delta_pos = increment['position']
+                delta_rot_vec = increment['orientation'] 
+                # print('delta_quat:', delta_quat)
                 #---------------------------------------------------
                 # 判断是否按下A键，按下A，机械臂允许移动
                 #---------------------------------------------------
@@ -161,23 +165,20 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 #------------------更新endpose状态---------------------
                 #获得当前机械臂状态
                 target_pose = env.get_robot_state()['ActualTCPPose']
+                current_euler = target_pose[3:6]
+                current_rot_vec = R.from_euler('xyz', current_euler, degrees=True).as_rotvec()
+                
+                new_rot_vec, new_euler_angles = update_rotation(current_rot_vec, delta_rot_vec) 
+                print('new_euler:', new_euler_angles)
                 # xyz in meters, roll pitch yaw in degrees
                 if freeze:
-                    # convert the euler into rotation vector back to robot controller
-                    target_pose[0] = target_pose[0]
-                    target_pose[1] = target_pose[1]
-                    target_pose[2] = target_pose[2]
-                    rotation_vector = R.from_euler('xyz', target_pose[3:6], degrees=True).as_rotvec()
-                    target_pose[3:6] = rotation_vector
+                    pass
                 else:
                     target_pose[0] = target_pose[0] + delta_pos[0]*0.1
                     target_pose[1] = target_pose[1] + delta_pos[1]*0.1
                     target_pose[2] = target_pose[2] + delta_pos[2]*0.1
-                    # TODO: 目前VR的旋转是用绝对值，xyz是增量，其原因是VR的旋转增量没有调通
-                    # target_pose[3] = np.deg2rad(rpy_vr[0])
-                    # target_pose[4] = np.deg2rad(rpy_vr[1])
-                    # target_pose[5] = np.deg2rad(rpy_vr[2])
-                    target_pose[3:6] = rotation_vector  # 使用旋转向量更新旋转部分
+                    target_pose[3:6] = np.array(euler_angles)  
+                    # target_pose[3:6] = new_euler
                 #---------------------------------------------------
                 #---------------电磁铁状态转换控制---------------------
                 if right_trigger >= 0.8 and not last_magnet_state:
@@ -205,6 +206,40 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                     )
                 precise_wait(t_cycle_end)
                 iter_idx += 1
+
+def quat_multiply(quaternion1, quaternion0):
+    """Return multiplication of two quaternions.
+    >>> q = quat_multiply([1, -2, 3, 4], [-5, 6, 7, 8])
+    >>> np.allclose(q, [-44, -14, 48, 28])
+    True
+    """
+    x0, y0, z0, w0 = quaternion0
+    x1, y1, z1, w1 = quaternion1
+    return np.array(
+        (
+            x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
+            -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
+            x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0,
+            -x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
+        )
+    )
+
+def update_rotation(rot_vec, delta_rot_vec):
+    # Convert rotation vectors to rotation matrices
+    rot = R.from_rotvec(rot_vec)
+    delta_rot = R.from_rotvec(delta_rot_vec)
+
+    # Apply delta rotation to the current rotation
+    new_rot = rot * delta_rot
+
+    # Convert the updated rotation matrix to a rotation vector
+    new_rot_vec = new_rot.as_rotvec()
+
+    # Convert to Euler angles in degrees
+    euler_angles = new_rot.as_euler('xyz', degrees=True)
+
+    return new_rot_vec, euler_angles
+
 
 # %%
 if __name__ == '__main__':

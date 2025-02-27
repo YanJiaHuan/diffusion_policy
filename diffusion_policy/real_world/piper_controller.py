@@ -412,7 +412,7 @@ class PiperInterpolationController(mp.Process):
                 # self.prev_pose = filtered_pose
                 state = {
                     'ActualTCPPose': new_pose,
-                    'robot_receive_timestamp': time.time()+0.05,
+                    'robot_receive_timestamp': time.time(),
                     'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }
                 self.ring_buffer.put(state)
