@@ -48,7 +48,7 @@ class PiperInterpolationController(mp.Process):
                  receive_keys=None,
                  get_max_k=128):
 
-        assert 0<frequency<= 500
+        # assert 0<frequency<= 500
         assert 0.03 <= lookahead_time <= 0.2
         assert 100 <= gain <= 2000
         assert 0 < max_pos_speed
@@ -257,13 +257,14 @@ class PiperInterpolationController(mp.Process):
             return
 
         try:
-            if int(magnet_on) == 1:
-                # print("[Electromagnet] Turning electromagnet ON.")
-                self.bt_connection.write(b'1')
-                self.current_magnet_state = 1.0
-            else:
-                self.bt_connection.write(b'0')
-                self.current_magnet_state = 0.0
+            if self.current_magnet_state != magnet_on:
+                if int(magnet_on) == 1:
+                    # print("[Electromagnet] Turning electromagnet ON.")
+                    self.bt_connection.write(b'1')
+
+                else:
+                    self.bt_connection.write(b'0')
+                self.current_magnet_state = magnet_on
         except serial.SerialException as e:
             print(f"[Electromagnet] Error writing to Bluetooth device: {e}")
 
@@ -412,7 +413,7 @@ class PiperInterpolationController(mp.Process):
                 # self.prev_pose = filtered_pose
                 state = {
                     'ActualTCPPose': new_pose,
-                    'robot_receive_timestamp': time.time()+0.05,
+                    'robot_receive_timestamp': time.time()+0.1,
                     'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }
                 self.ring_buffer.put(state)

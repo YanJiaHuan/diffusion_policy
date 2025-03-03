@@ -57,5 +57,5 @@ def main(base_path):
     plot_rotation_6d(base_path)
 
 if __name__ == "__main__":
-    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark_v5'  # Update this to the actual base path
+    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark_v6'  # Update this to the actual base path
     main(base_path)

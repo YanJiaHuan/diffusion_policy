@@ -91,7 +91,7 @@ def main(checkpoint_path, output_dir, frequency, steps_per_inference, can_interf
             env.realsense.set_white_balance(white_balance=5900)  
             # env.realsense.set_contrast(contrast=50) #default 50 
             print("Waiting for realsense")
-            time.sleep(1.0)
+            time.sleep(1)
             
             #----------------- policy inference -------------------#
             try:                
