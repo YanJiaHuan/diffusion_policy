@@ -48,7 +48,7 @@ class PiperInterpolationController(mp.Process):
                  receive_keys=None,
                  get_max_k=128):
 
-        assert 0<frequency<= 500
+        # assert 0<frequency<= 500
         assert 0.03 <= lookahead_time <= 0.2
         assert 100 <= gain <= 2000
         assert 0 < max_pos_speed
@@ -335,20 +335,20 @@ class PiperInterpolationController(mp.Process):
             rotation_vector = R.from_euler('xyz', [roll, pitch, yaw]).as_rotvec()
             curr_magnet = self.current_magnet_state
             curr_pose = [x, y, z, rotation_vector[0], rotation_vector[1], rotation_vector[2],curr_magnet]
-            # new_pose = [
-            #     curr_pose_raw.end_pose.X_axis / 1000000,
-            #     curr_pose_raw.end_pose.Y_axis / 1000000,
-            #     curr_pose_raw.end_pose.Z_axis / 1000000,
-            #     curr_pose_raw.end_pose.RX_axis / 1000,
-            #     curr_pose_raw.end_pose.RY_axis / 1000,
-            #     curr_pose_raw.end_pose.RZ_axis / 1000
-            # ]
-            # state = {
-            #         'ActualTCPPose': new_pose,
-            #         'robot_receive_timestamp': time.time(),
-            #         'ActualMagnetState': curr_magnet  # Add magnet state to the ring buffer
-            #     }
-            # self.ring_buffer.put(state)
+            new_pose = [
+                curr_pose_raw.end_pose.X_axis / 1000000,
+                curr_pose_raw.end_pose.Y_axis / 1000000,
+                curr_pose_raw.end_pose.Z_axis / 1000000,
+                curr_pose_raw.end_pose.RX_axis / 1000,
+                curr_pose_raw.end_pose.RY_axis / 1000,
+                curr_pose_raw.end_pose.RZ_axis / 1000
+            ]
+            state = {
+                    'ActualTCPPose': new_pose,
+                    'robot_receive_timestamp': time.time(),
+                    'ActualMagnetState': curr_magnet  # Add magnet state to the ring buffer
+                }
+            self.ring_buffer.put(state)
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
             pose_interp = PoseTrajectoryInterpolator(
@@ -389,15 +389,15 @@ class PiperInterpolationController(mp.Process):
                 # Update state
                 magnet_state = self.current_magnet_state
                 magnet_state = np.array([magnet_state], dtype=np.float64)
-                # curr_pose = self.piper.GetArmEndPoseMsgs()
-                # x = curr_pose.end_pose.X_axis / 1000000
-                # y = curr_pose.end_pose.Y_axis / 1000000
-                # z = curr_pose.end_pose.Z_axis / 1000000
-                # roll = curr_pose.end_pose.RX_axis / 1000
-                # pitch = curr_pose.end_pose.RY_axis / 1000
-                # yaw = curr_pose.end_pose.RZ_axis / 1000
-                # new_pose = [x, y, z, roll, pitch, yaw]
-                # new_pose = np.array(new_pose, dtype=np.float64)
+                curr_pose = self.piper.GetArmEndPoseMsgs()
+                x = curr_pose.end_pose.X_axis / 1000000
+                y = curr_pose.end_pose.Y_axis / 1000000
+                z = curr_pose.end_pose.Z_axis / 1000000
+                roll = curr_pose.end_pose.RX_axis / 1000
+                pitch = curr_pose.end_pose.RY_axis / 1000
+                yaw = curr_pose.end_pose.RZ_axis / 1000
+                new_pose = [x, y, z, roll, pitch, yaw]
+                new_pose = np.array(new_pose, dtype=np.float64)
                 # new_pose = np.round(new_pose, 3)
                 # # print(f"new_pose: {new_pose}")
                 # filtered_pose = [
