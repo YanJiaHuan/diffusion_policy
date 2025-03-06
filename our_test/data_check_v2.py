@@ -18,15 +18,15 @@ def load_zarr(replay_buffer_path):
         'magnet_state': replay_buffer['data/magnet_state'][:] if 'data/magnet_state' in replay_buffer else None,
     }
     
-    # # Convert rotation vectors in radians to Euler angles in degrees
-    # actions = data['actions']
-    # rotation_vector = actions[:, 3:6]  # assuming rotation vectors are in columns 3, 4, 5
+    # Convert rotation vectors in radians to Euler angles in degrees
+    actions = data['actions']
+    rotation_vector = actions[:, 3:6]  # assuming rotation vectors are in columns 3, 4, 5
     
-    # # Convert to Euler angles (in degrees)
-    # euler_angles = R.from_rotvec(rotation_vector).as_euler('xyz', degrees=True)
-    # actions[:, 3:6] = euler_angles  # replace rotation vectors with Euler angles
+    # Convert to Euler angles (in degrees)
+    euler_angles = R.from_rotvec(rotation_vector).as_euler('xyz', degrees=True)
+    actions[:, 3:6] = euler_angles  # replace rotation vectors with Euler angles
     
-    # data['actions'] = actions  # update actions with the new Euler angles
+    data['actions'] = actions  # update actions with the new Euler angles
 
     return data
 

@@ -22,8 +22,8 @@ from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.keystroke_counter import (
     KeystrokeCounter, Key, KeyCode
 )
+from diffusion_policy.encapsulated_oculusReader.oculus_data_jh import OculusInterface
 from diffusion_policy.encapsulated_oculusReader.oculus_reader import OculusReader
-from diffusion_policy.encapsulated_oculusReader.oculus_data import OculusHandler
 from scipy.spatial.transform import Rotation as R
 
 import math
@@ -32,15 +32,11 @@ import math
 @click.option('--output', '-o', default = 'data/our_collected_data/test', help="Directory to save demonstration dataset.")
 @click.option('--can_interface', '-c', default='can_piper', help="CAN interface to use.")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
-@click.option('--reset', '-r', is_flag=True, default=True, help="Whether to initialize robot joint configuration in the beginning.")
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SapceMouse command to executing on Robot in Sec.")
-def main(output, can_interface, vis_camera_idx, reset, frequency, command_latency):
-
+def main(output, can_interface, vis_camera_idx, frequency, command_latency):
     dt = 1/frequency
-    ocu_hz = 60
-    oculus_reader = OculusReader()
-    handler = OculusHandler(oculus_reader, right_controller=True, hz=ocu_hz, use_filter=False, max_threshold=0.6/ocu_hz)
+    oculus_interface = OculusInterface(oculus_reader=OculusReader())
     magnet_state = False
     last_magnet_state = False
     bt_port='/dev/rfcomm0'
@@ -62,8 +58,7 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 thread_per_video=3,
                 # video recording quality, lower is better (but slower).
                 video_crf=21,
-                shm_manager=shm_manager,
-                reset = reset
+                shm_manager=shm_manager
             ) as env:
             cv2.setNumThreads(1)
 
@@ -72,7 +67,7 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
             # realsense white balance
             env.realsense.set_white_balance(white_balance=5900)
             time.sleep(1.0)
-
+            print('ready')
 
             state = env.get_robot_state()
             target_pose = state['ActualTCPPose']
@@ -137,24 +132,10 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
 
                 precise_wait(t_sample)
                 # get teleop command
-                increment = handler.get_increment()
-                print('increment:', increment)
-                buttons = handler.get_buttons()
-                original_orientation = handler.get_original_orientation()
-                #-----------------旋转矩阵转欧拉角(now 旋转向量)---------------------
-                r = R.from_matrix(original_orientation)
-                rotation_vector = r.as_rotvec()
-                euler_angles = r.as_euler('xyz', degrees=True)
-                print('euler_angles:', euler_angles)
-                # rpy_vr = np.array(np.mod(euler_angles + 180, 360) - 180)
-                #-----------------获取VR手柄按键状态-------------------
+                action, buttons = oculus_interface.get_action()   
                 A_button = buttons.get("A", [0])
-                B_button = buttons.get("B", [0])
                 right_trigger = buttons.get("rightTrig", [0])[0]
-                delta_pos = increment['position']
-                delta_rot_vec = increment['orientation'] 
-                # print('delta_quat:', delta_quat)
-                #---------------------------------------------------
+                print('action:', action)
                 # 判断是否按下A键，按下A，机械臂允许移动
                 #---------------------------------------------------
                 if A_button:
@@ -162,24 +143,29 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 else:
                     freeze = True
                 #----------------------------------------------------
-                #------------------更新endpose状态---------------------
-                #获得当前机械臂状态
-                target_pose = env.get_robot_state()['ActualTCPPose']
-                current_euler = target_pose[3:6]
-                current_rot_vec = R.from_euler('xyz', current_euler, degrees=True).as_rotvec()
-                
-                new_rot_vec, new_euler_angles = update_rotation(current_rot_vec, delta_rot_vec) 
-                print('new_euler:', new_euler_angles)
-                # xyz in meters, roll pitch yaw in degrees
                 if freeze:
-                    pass
+                    target_pose = env.get_robot_state()['ActualTCPPose']
+                    print('freeze')
+                    print('target_pose:', target_pose)
                 else:
-                    target_pose[0] = target_pose[0] + delta_pos[0]*0.1
-                    target_pose[1] = target_pose[1] + delta_pos[1]*0.1
-                    target_pose[2] = target_pose[2] + delta_pos[2]*0.1
-                    target_pose[3:6] = np.array(euler_angles)  
-                    # target_pose[3:6] = new_euler
-                #---------------------------------------------------
+                    action, buttons = oculus_interface.get_action() 
+                    delta_pos = action[:3]
+                    delta_quat = action[3:]
+                    scale = 10
+                    delta_pos = delta_pos * scale
+                    curr_pose = env.get_robot_state()['ActualTCPPose']
+                    current_quat = R.from_rotvec(curr_pose[3:6]).as_quat()
+                    new_quat = quat_multiply(current_quat, oculus_interface.quat_inverse(delta_quat))
+                    # new_quat = quat_multiply(current_quat, delta_quat)
+                    for i in range(scale):
+                        new_quat = quat_multiply(current_quat, oculus_interface.quat_inverse(delta_quat))
+                        # new_quat = quat_multiply(current_quat, delta_quat)
+                        current_quat = new_quat
+                    new_rot_vec = R.from_quat(new_quat).as_rotvec()
+                    target_pose[0] = curr_pose[0] + delta_pos[0]
+                    target_pose[1] = curr_pose[1] + delta_pos[1]
+                    target_pose[2] = curr_pose[2] + delta_pos[2]
+                    target_pose[3:6] = new_rot_vec
                 #---------------电磁铁状态转换控制---------------------
                 if right_trigger >= 0.8 and not last_magnet_state:
                     magnet_state = not magnet_state
@@ -196,7 +182,6 @@ def main(output, can_interface, vis_camera_idx, reset, frequency, command_latenc
                 else:
                     magnet_on = 0.0
                 action_7d[6] = magnet_on 
-
 
                 #execute teleop command
                 env.exec_actions(
@@ -224,21 +209,7 @@ def quat_multiply(quaternion1, quaternion0):
         )
     )
 
-def update_rotation(rot_vec, delta_rot_vec):
-    # Convert rotation vectors to rotation matrices
-    rot = R.from_rotvec(rot_vec)
-    delta_rot = R.from_rotvec(delta_rot_vec)
 
-    # Apply delta rotation to the current rotation
-    new_rot = rot * delta_rot
-
-    # Convert the updated rotation matrix to a rotation vector
-    new_rot_vec = new_rot.as_rotvec()
-
-    # Convert to Euler angles in degrees
-    euler_angles = new_rot.as_euler('xyz', degrees=True)
-
-    return new_rot_vec, euler_angles
 
 
 # %%

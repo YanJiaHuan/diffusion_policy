@@ -72,10 +72,17 @@ class OculusInterface:
                 pos = pos[[2, 0, 1]]
                 pos[0] = -pos[0]
                 pos[1] = -pos[1]
-                # Extract rotation matrix (upper-left 3x3 block)
-                oculus_mat = self.rot_mat([-np.pi / 2, 0, np.pi / 2]) @ pose[:3, :3]
-                # Convert rotation matrix to quaternion (using a helper function, e.g., self.mat2quat)
-                quat = self.mat2quat(oculus_mat)
+                # # Extract rotation matrix (upper-left 3x3 block)
+                # oculus_mat = self.rot_mat([-np.pi / 2, 0, np.pi / 2]) @ pose[:3, :3]
+                # # Convert rotation matrix to quaternion (using a helper function, e.g., self.mat2quat)
+                # quat = self.mat2quat(oculus_mat)
+
+                # angles_deg 是度数
+                rot_mat = pose[:3, :3]
+                angles_deg = Rotation.from_matrix(rot_mat).as_euler('xyz', degrees=True)
+                quat = Rotation.from_euler('xyz', angles_deg, degrees=True).as_quat()
+
+
                 quat = quat[[0, 1, 2, 3]]
                 if quat[3] < 0.0:
                     quat *= -1.0
@@ -89,7 +96,7 @@ class OculusInterface:
                 print("Pose for 'r' not found; skipping this sample.")
             time.sleep(1.0 / self.hz)
 
-    def get_action(self):
+    def get_action_delta(self):
         """
         Get the latest incremental pose change and button state.
 
@@ -144,6 +151,18 @@ class OculusInterface:
         # Combine position and rotation increments.
         action = np.hstack([delta_pos, delta_quat])
         return action.astype(np.float32), buttons
+    
+    def get_action(self):
+        with self.lock:
+            if len(self.pose_buffer) == 0:
+                # No pose data available at all.
+                return None,None
+            else:
+                # Use the two most recent samples.
+                pose_curr = self.pose_buffer[-1].copy()
+                buttons = self.button_buffer[-1].copy()
+
+        return pose_curr.astype(np.float32), buttons
 
     def close(self):
         """Stop the data collection thread and close the OculusReader."""

@@ -7,7 +7,7 @@ from multiprocessing.managers import SharedMemoryManager
 from diffusion_policy.shared_memory.shared_memory_queue import SharedMemoryQueue, Empty
 from diffusion_policy.shared_memory.shared_memory_ring_buffer import SharedMemoryRingBuffer
 from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryInterpolator
-from piper_sdk import C_PiperInterface
+from piper_sdk import *
 import serial
 from scipy.spatial.transform import Rotation as R
 
@@ -17,10 +17,9 @@ from scipy.spatial.transform import Rotation as R
 # ============================== #
 class Command(enum.Enum):
     STOP = 0
-    SERVOL = 1
-    SCHEDULE_WAYPOINT = 2
-    MOVE_POINT = 3
-    MAGNET = 4
+    SCHEDULE_WAYPOINT = 1
+    MOVE_POINT = 2
+    MAGNET = 3
 
 # ============================== #
 #        PIPER CONTROLLER        #
@@ -31,58 +30,29 @@ class PiperInterpolationController(mp.Process):
                  can_interface="can_piper",
                  bt_port='/dev/rfcomm0',
                  bt_baud_rate=115200,
-                 frequency=10,
-                 lookahead_time=0.1,
-                 gain=300,
-                 max_pos_speed=0.25,
-                 max_rot_speed=0.16,
-                 launch_timeout=3,
-                 tcp_offset_pose=None,
-                 payload_mass=None,
-                 payload_cog=None,
-                 joints_init=None,
-                 joints_init_speed=1,
-                 reset = True,
+                 frequency=125,
+                 launch_timeout=5,
+                 joints_init=True,
+                 joints_init_speed=1.0,
                  soft_real_time=False,
+                 max_pos_speed = 0.25,
+                 max_rot_speed = 0.6,
                  verbose=False,
                  receive_keys=None,
                  get_max_k=128):
 
         # assert 0<frequency<= 500
-        assert 0.03 <= lookahead_time <= 0.2
-        assert 100 <= gain <= 2000
-        assert 0 < max_pos_speed
-        assert 0 < max_rot_speed
-        if tcp_offset_pose is not None:
-            tcp_offset_pose = np.array(tcp_offset_pose)
-            assert tcp_offset_pose.shape == (6,)
-        if payload_mass is not None:
-            assert 0 < payload_mass <= 5
-        if payload_cog is not None:
-            payload_cog = np.array(payload_cog)
-            assert payload_cog.shape == (3,)
-            assert payload_mass is not None
-        if joints_init is not None:
-            joints_init = np.array(joints_init)
-            assert joints_init.shape == (6,)
-
         super().__init__(name="PiperInterpolationController")
         self.can_interface = can_interface
         self.frequency = frequency
-        self.lookahead_time = lookahead_time
-        self.gain = gain
-        self.max_pos_speed = max_pos_speed
-        self.max_rot_speed = max_rot_speed
         self.launch_timeout = launch_timeout
-        self.tcp_offset_pose = tcp_offset_pose
-        self.payload_mass = payload_mass
-        self.payload_cog = payload_cog
         self.joints_init = joints_init
         self.joints_init_speed = joints_init_speed
         self.soft_real_time = soft_real_time
         self.verbose = verbose
-        self.reset = reset
         self.prev_pose = None
+        self.max_pos_speed = max_pos_speed
+        self.max_rot_speed = max_rot_speed
 
         #---------------Magnet Controller----------------
         self.bt_port = bt_port
@@ -90,11 +60,11 @@ class PiperInterpolationController(mp.Process):
         self.bt_connection = None  # will hold serial.Serial object
         self.current_magnet_state = 0.0  # track magnet state locally
         #-------------------------------------------------
-        self.piper = C_PiperInterface(self.can_interface)
+        self.piper = C_PiperInterface_V2(self.can_interface)
         
         # Input Queue
         example = {
-            'cmd': Command.SERVOL.value,
+            'cmd': Command.SCHEDULE_WAYPOINT.value,
             'target_pose': np.zeros((7,), dtype=np.float64),
             'duration': 0.0,
             'target_time': 0.0,
@@ -110,12 +80,14 @@ class PiperInterpolationController(mp.Process):
             receive_keys = [
                 'ActualTCPPose',
                 'ActualMagnetState',  # Include the magnet state key here
-            ]
 
+                'TargetTCPPose',
+                'TargetMagnetState',
+            ]
         # build ring buffer
         # Ring Buffer for robot state
         example = {
-            'ActualTCPPose': np.zeros((6,), dtype=np.float64),
+            'ActualTCPPose': np.zeros((7,), dtype=np.float64),
             'robot_receive_timestamp': time.time(),
             'ActualMagnetState': np.zeros((1,), dtype=np.float64),
         }
@@ -124,7 +96,7 @@ class PiperInterpolationController(mp.Process):
             shm_manager=shm_manager,
             examples=example,
             get_max_k=get_max_k,
-            get_time_budget=0.3,
+            get_time_budget=0.2,
             put_desired_frequency=frequency
         )
 
@@ -144,14 +116,15 @@ class PiperInterpolationController(mp.Process):
             print(f"[PiperController] Controller process spawned at PID {self.pid}")
 
     def stop(self, wait=True):
-        self.input_queue.put({'cmd': Command.STOP.value})
+        message = {
+            'cmd': Command.STOP.value
+        }
+        self.input_queue.put(message)
         if wait:
             self.stop_wait()
 
     def start_wait(self):
-        got_event = self.ready_event.wait(self.launch_timeout)
-        if not got_event:
-            raise RuntimeError("Piper controller never became ready!")
+        self.ready_event.wait(self.launch_timeout)
         assert self.is_alive()
 
     def stop_wait(self):
@@ -179,41 +152,26 @@ class PiperInterpolationController(mp.Process):
         self.stop()
 
     # ========= Command Methods ===========
-
-    def servoL(self, pose, duration=0.1):
-        """
-        duration: desired time to reach pose
-        """
-        assert self.is_alive()
-        assert(duration >= (1/self.frequency))
-        pose = np.array(pose)
-        assert pose.shape == (6,)
-
-        message = {
-            'cmd': Command.SERVOL.value,
-            'target_pose': pose,
-            'duration': duration
-        }
-        self.input_queue.put(message)
-
     def schedule_waypoint(self, pose, target_time):
+        assert target_time > time.time()
         pose = np.array(pose)
-        self.input_queue.put({
+        message = {
             'cmd': Command.SCHEDULE_WAYPOINT.value,
             'target_pose': pose,
             'target_time': target_time
-        })
+        }
+        self.input_queue.put(message)
     # [新增] move_point: 新增的高层API，直接put一个 MOVE_POINT 命令
     def move_point(self, pose):
         """Directly move to a specified pose without interpolation."""
         assert self.is_alive()
         pose = np.array(pose)
         assert pose.shape == (6,)
-
-        self.input_queue.put({
+        message = {
             'cmd': Command.MOVE_POINT.value,
             'target_pose': pose
-        })
+        }
+        self.input_queue.put(message)
 
     # ========= receive APIs =============
     def get_state(self, k=None, out=None):
@@ -225,25 +183,41 @@ class PiperInterpolationController(mp.Process):
     def get_all_state(self):
         return self.ring_buffer.get_all()
     
-    def _wait_until_enabled(self, timeout=5):
+    def enable_fun(self, piper:C_PiperInterface_V2):
+        '''
+        使能机械臂并检测使能状态,尝试5s,如果使能超时则退出程序
+        '''
+        enable_flag = False
+        # 设置超时时间（秒）
+        timeout = 5
+        # 记录进入循环前的时间
         start_time = time.time()
-        while True:
-            elapsed = time.time() - start_time
-            enable_flag = (
-                self.piper.GetArmLowSpdInfoMsgs().motor_1.foc_status.driver_enable_status and
-                self.piper.GetArmLowSpdInfoMsgs().motor_2.foc_status.driver_enable_status and
-                self.piper.GetArmLowSpdInfoMsgs().motor_3.foc_status.driver_enable_status and
-                self.piper.GetArmLowSpdInfoMsgs().motor_4.foc_status.driver_enable_status and
-                self.piper.GetArmLowSpdInfoMsgs().motor_5.foc_status.driver_enable_status and
-                self.piper.GetArmLowSpdInfoMsgs().motor_6.foc_status.driver_enable_status
-            )
-            if enable_flag:
-                print("[PiperController] All motors enabled.")
+        elapsed_time_flag = False
+        while not (enable_flag):
+            elapsed_time = time.time() - start_time
+            print("--------------------")
+            enable_flag = piper.GetArmLowSpdInfoMsgs().motor_1.foc_status.driver_enable_status and \
+                piper.GetArmLowSpdInfoMsgs().motor_2.foc_status.driver_enable_status and \
+                piper.GetArmLowSpdInfoMsgs().motor_3.foc_status.driver_enable_status and \
+                piper.GetArmLowSpdInfoMsgs().motor_4.foc_status.driver_enable_status and \
+                piper.GetArmLowSpdInfoMsgs().motor_5.foc_status.driver_enable_status and \
+                piper.GetArmLowSpdInfoMsgs().motor_6.foc_status.driver_enable_status
+            print("使能状态:",enable_flag)
+            piper.EnableArm(7)
+            piper.GripperCtrl(0,1000,0x01, 0)
+            print("--------------------")
+            # 检查是否超过超时时间
+            if elapsed_time > timeout:
+                print("超时....")
+                elapsed_time_flag = True
+                enable_flag = True
                 break
-            if elapsed > timeout:
-                print("[PiperController] Enable timeout. Exiting.")
-                exit(0)
-            time.sleep(0.5)
+            time.sleep(1)
+            pass
+        
+        if(elapsed_time_flag):
+            print("程序自动使能超时,退出程序")
+            exit(0)
 
     def control_esp32(self, magnet_on):
         """
@@ -276,75 +250,48 @@ class PiperInterpolationController(mp.Process):
         # init
         self.piper.ConnectPort()
         self.piper.EnableArm(7)
-        self._wait_until_enabled()
-        self.piper.GripperCtrl(0, 1000, 0x01, 0)
+        self.enable_fun(piper=self.piper)
+        self.piper.GripperCtrl(0,1000,0x01, 0)
         self.setup_bluetooth()
         try:
             if self.verbose:
                 print("[PiperController] Starting main loop.")
-
-            if self.tcp_offset_pose is not None:
-                pass
-            if self.payload_mass is not None:
-                if self.payload_cog is not None:
-                    pass
-                else:
-                    pass
             # init joints
-            if self.joints_init is not None:
-                pass #TODO add init joints
-            if self.reset:
-                self.piper.MotionCtrl_2(0x01, 0x01, 30, 0x00) #角度控制模式
-                # position = [
-                #     -0.0296,
-                #     0.7135,
-                #     -1.0597,
-                #     -0.0159,
-                #     1.2376,
-                #     1.0212,
-                #     0.01
-                #     ]
-                position = [-0.012, 0.607, -0.587, 0.091, 0.376, 0.524, 0.01]
-
+            if self.joints_init:
+                print("[PiperController] Initializing joints.")
                 factor = 57324.840764 #1000*180/3.14
+                position = [-0.012, 0.607, -0.587, 0.091, 0.376, 0.524, 0.01]
                 joint_0 = round(position[0]*factor)
                 joint_1 = round(position[1]*factor)
                 joint_2 = round(position[2]*factor)
                 joint_3 = round(position[3]*factor)
                 joint_4 = round(position[4]*factor)
                 joint_5 = round(position[5]*factor)
+                joint_6 = round(position[6]*1000*1000)
+                self.piper.MotionCtrl_2(0x01, 0x01, 100, 0x00)
                 self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
-                self.piper.MotionCtrl_2(0x01, 0x01, 30, 0x00)
-                print("[PiperController] Reset the robot.")
+                self.piper.GripperCtrl(abs(joint_6), 1000, 0x01, 0)
                 time.sleep(2)
+                print("[PiperController] Joints initialized.")
                 
             # main loop
             dt = 1. / self.frequency
-            curr_pose_raw = self.piper.GetArmEndPoseMsgs()
+            pose = self.piper.GetArmEndPoseMsgs()
 
-            x = curr_pose_raw.end_pose.X_axis / 1000000
-            y = curr_pose_raw.end_pose.Y_axis / 1000000
-            z = curr_pose_raw.end_pose.Z_axis / 1000000
-
+            x = pose.end_pose.X_axis / 1000000
+            y = pose.end_pose.Y_axis / 1000000
+            z = pose.end_pose.Z_axis / 1000000
             # Convert the SDK’s Euler angles to radians.
             # Note: The SDK outputs angles in 0.001 degrees, so divide by 1000 and convert to radians.
-            roll = np.deg2rad(curr_pose_raw.end_pose.RX_axis / 1000)
-            pitch = np.deg2rad(curr_pose_raw.end_pose.RY_axis / 1000)
-            yaw = np.deg2rad(curr_pose_raw.end_pose.RZ_axis / 1000)
-            # self.prev_pose = [x, y, z, curr_pose_raw.end_pose.RX_axis / 1000, curr_pose_raw.end_pose.RY_axis / 1000, curr_pose_raw.end_pose.RZ_axis / 1000]
-            rotation_vector = R.from_euler('xyz', [roll, pitch, yaw]).as_rotvec()
+            roll = pose.end_pose.RX_axis / 1000
+            pitch = pose.end_pose.RY_axis / 1000
+            yaw = pose.end_pose.RZ_axis / 1000
+            
+            rotation_vector = R.from_euler('xyz', [roll, pitch, yaw], degrees=True).as_rotvec()
             curr_magnet = self.current_magnet_state
             curr_pose = [x, y, z, rotation_vector[0], rotation_vector[1], rotation_vector[2],curr_magnet]
-            new_pose = [
-                curr_pose_raw.end_pose.X_axis / 1000000,
-                curr_pose_raw.end_pose.Y_axis / 1000000,
-                curr_pose_raw.end_pose.Z_axis / 1000000,
-                curr_pose_raw.end_pose.RX_axis / 1000,
-                curr_pose_raw.end_pose.RY_axis / 1000,
-                curr_pose_raw.end_pose.RZ_axis / 1000
-            ]
             state = {
-                    'ActualTCPPose': new_pose,
+                    'ActualTCPPose': curr_pose,
                     'robot_receive_timestamp': time.time(),
                     'ActualMagnetState': curr_magnet  # Add magnet state to the ring buffer
                 }
@@ -360,62 +307,46 @@ class PiperInterpolationController(mp.Process):
             while keep_running:
                 t_now = time.monotonic()
                 pose_command = pose_interp(t_now)
-                magnet_command = pose_command[6]
-                # Update magnet state
-                self.control_esp32(magnet_command)
                 # Convert rotation vector to Euler angles
                 rotation_vector = pose_command[3:6]
                 euler_angles = R.from_rotvec(rotation_vector).as_euler('xyz', degrees=True)
-                # Execute pending magnet commands whose target_time has been reached
-                new_pose = [
-                    pose_command[0],
-                    pose_command[1],
-                    pose_command[2],
-                    euler_angles[0],
-                    euler_angles[1],
-                    euler_angles[2]
-                ]
-                scaled_pose = [
-                    int(new_pose[0] * 1000000),
-                    int(new_pose[1] * 1000000),
-                    int(new_pose[2] * 1000000),
-                    int(new_pose[3] * 1000),
-                    int(new_pose[4] * 1000),
-                    int(new_pose[5] * 1000)
+                target_pose = [
+                    round(pose_command[0] * 1000000),
+                    round(pose_command[1] * 1000000),
+                    round(pose_command[2] * 1000000),
+                    round(euler_angles[0] * 1000),
+                    round(euler_angles[1] * 1000),
+                    round(euler_angles[2] * 1000)
                 ]
                 # xyz的单位是mm，rpy的单位是度
-                self.piper.MotionCtrl_2(0x01, 0x00, 100,0x00)
-                self.piper.EndPoseCtrl(*scaled_pose)
-                # Update state
+                self.piper.MotionCtrl_2(0x01, 0x00, 100, 0x00)
+                self.piper.EndPoseCtrl(*target_pose)
+                self.piper.GripperCtrl(0, 1000, 0x01, 0)
+                magnet_command = pose_command[6]
+                self.control_esp32(magnet_command) # Control and Update magnet state
+
+                # update robot state
+                state = dict()
                 magnet_state = self.current_magnet_state
                 magnet_state = np.array([magnet_state], dtype=np.float64)
-                curr_pose = self.piper.GetArmEndPoseMsgs()
-                x = curr_pose.end_pose.X_axis / 1000000
-                y = curr_pose.end_pose.Y_axis / 1000000
-                z = curr_pose.end_pose.Z_axis / 1000000
-                roll = curr_pose.end_pose.RX_axis / 1000
-                pitch = curr_pose.end_pose.RY_axis / 1000
-                yaw = curr_pose.end_pose.RZ_axis / 1000
-                new_pose = [x, y, z, roll, pitch, yaw]
-                new_pose = np.array(new_pose, dtype=np.float64)
-                # new_pose = np.round(new_pose, 3)
-                # # print(f"new_pose: {new_pose}")
-                # filtered_pose = [
-                #     self.low_pass_filter(new_pose[0], self.prev_pose[0]),
-                #     self.low_pass_filter(new_pose[1], self.prev_pose[1]),
-                #     self.low_pass_filter(new_pose[2], self.prev_pose[2]),
-                #     self.low_pass_filter(new_pose[3], self.prev_pose[3]),
-                #     self.low_pass_filter(new_pose[4], self.prev_pose[4]),
-                #     self.low_pass_filter(new_pose[5], self.prev_pose[5]),
-                # ]
-                # print(f"filtered_pose: {filtered_pose}")
-                # self.prev_pose = filtered_pose
+                pose = self.piper.GetArmEndPoseMsgs()
+                x = pose.end_pose.X_axis / 1000000
+                y = pose.end_pose.Y_axis / 1000000
+                z = pose.end_pose.Z_axis / 1000000
+                # Convert the SDK’s Euler angles to radians.
+                # Note: The SDK outputs angles in 0.001 degrees, so divide by 1000 and convert to radians.
+                roll = pose.end_pose.RX_axis / 1000
+                pitch = pose.end_pose.RY_axis / 1000
+                yaw = pose.end_pose.RZ_axis / 1000
+                rotation_vector = R.from_euler('xyz', [roll, pitch, yaw], degrees=True).as_rotvec()
+                curr_pose = [x, y, z, rotation_vector[0], rotation_vector[1], rotation_vector[2],magnet_state]
                 state = {
-                    'ActualTCPPose': new_pose,
+                    'ActualTCPPose': curr_pose,
                     'robot_receive_timestamp': time.time(),
                     'ActualMagnetState': magnet_state  # Add magnet state to the ring buffer
                 }
                 self.ring_buffer.put(state)
+
                 # fetch command from queue
                 try:
                     commands = self.input_queue.get_all()
@@ -432,21 +363,6 @@ class PiperInterpolationController(mp.Process):
                     if cmd == Command.STOP.value:
                         keep_running = False
                         break
-                    elif cmd == Command.SERVOL.value:
-                        target_pose = command['target_pose']
-                        duration = float(command['duration'])
-                        curr_time = t_now + dt
-                        t_insert = curr_time + duration
-                        pose_interp = pose_interp.drive_to_waypoint(
-                            pose=target_pose,
-                            time=t_insert,
-                            curr_time=curr_time,
-                            max_pos_speed=self.max_pos_speed,
-                            max_rot_speed=self.max_rot_speed
-                        )
-                        last_waypoint_time = t_insert
-                        if self.verbose:
-                            print(f"[PiperController] Scheduled waypoint to {target_pose} at {t_insert}")
                     elif cmd == Command.SCHEDULE_WAYPOINT.value:
                         target_pose = command['target_pose']
                         target_time = float(command['target_time'])
@@ -455,8 +371,8 @@ class PiperInterpolationController(mp.Process):
                         pose_interp = pose_interp.schedule_waypoint(
                             pose=target_pose,
                             time=target_time,
-                            max_pos_speed=self.max_pos_speed,
-                            max_rot_speed=self.max_rot_speed,
+                            max_pos_speed = self.max_pos_speed, 
+                            max_rot_speed = self.max_rot_speed,
                             curr_time=curr_time,
                             last_waypoint_time=last_waypoint_time
                         )
@@ -469,11 +385,14 @@ class PiperInterpolationController(mp.Process):
                         keep_running = False
                         break
 
+                # regulate frequency
+                t_end = time.monotonic()
+                elapsed_time = t_end - t_now
+                if elapsed_time < dt:
+                    time.sleep(dt - elapsed_time)
 
-                
                 if iter_idx == 0:
                     self.ready_event.set()
-
                 iter_idx += 1
 
                 if self.verbose:

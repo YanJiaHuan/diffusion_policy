@@ -7,7 +7,7 @@ from typing import (
 import time
 from piper_sdk import *
 
-def enable_fun(piper:C_PiperInterface):
+def enable_fun(piper:C_PiperInterface_V2):
     '''
     使能机械臂并检测使能状态,尝试5s,如果使能超时则退出程序
     '''
@@ -43,7 +43,7 @@ def enable_fun(piper:C_PiperInterface):
         exit(0)
 
 if __name__ == "__main__":
-    piper = C_PiperInterface("can_piper")
+    piper = C_PiperInterface_V2("can_piper")
     piper.ConnectPort()
     piper.EnableArm(7)
     enable_fun(piper=piper)
@@ -66,16 +66,7 @@ if __name__ == "__main__":
     #             0.8]
     count = 0
     while True:
-        a = piper.GetArmEndPoseMsgs()
-        # print(a)
-        # Assuming 'a' is an instance of ArmEndPose
-        x = a.end_pose.X_axis
-        y = a.end_pose.Y_axis
-        z = a.end_pose.Z_axis
-        rx = a.end_pose.RX_axis
-        ry = a.end_pose.RY_axis
-        rz = a.end_pose.RZ_axis
-        print('x',x)
+        print(piper.GetArmEndPoseMsgs())
         # print(piper.GetArmStatus())
         import time
         count  = count + 1
