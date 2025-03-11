@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OculusInterface for non-ROS robot control that provides incremental changes only.
+OculusInterface
 
 This code continuously collects data from an OculusReader into thread-safe buffers.
 Each call to get_action() computes the incremental change in pose between the two latest samples,
@@ -9,9 +9,12 @@ returning a 7D vector:
 where:
   - dx, dy, dz: incremental position change in meters.
   - qx, qy, qz, qw: incremental rotation as a quaternion.
-    (You can convert the quaternion to Euler angles (roll, pitch, yaw in degrees) using quat_to_euler().)
 
 It also returns the latest button state (a dictionary) aligned in time with the pose.
+
+Functions:
+    - get_action_delta(): Get the latest incremental pose change and button state.
+    - get_action(): Get the latest pose and button state.
 """
 
 import time
@@ -19,31 +22,33 @@ import numpy as np
 import math
 import threading
 from collections import deque
-
-try:
-    from .oculus_reader.reader import OculusReader
-except ImportError:
-    raise Exception("Please install oculus_reader following https://github.com/rail-berkeley/oculus_reader")
+from oculus_reader.reader import OculusReader
 from scipy.spatial.transform import Rotation
 class OculusInterface:
-    def __init__(self, oculus_reader, max_buffer=10, relative_move=True,hz=100):
+    def __init__(self, oculus_reader, max_buffer=10, hz=100, degree=True,filter=False, alpha_pos=0.5, alpha_rot=0.5):
         """
         Initialize the OculusInterface.
-
         Args:
             oculus_reader: An instance of OculusReader.
             max_buffer: Maximum number of samples to keep in the buffers.
-            relative_move: (Always True here) Only incremental changes are computed.
+            hz: Frequency (Hz) at which to read data from OculusReader.
         """
         self.hz = hz    
         self.oculus = oculus_reader
-        # Allow some time for OculusReader to initialize.
-        time.sleep(1)
-        self.relative_move = relative_move
+        self.degree = degree # Use degree or radian
+        self.filter = filter
+        self.alpha_pos = alpha_pos
+        self.alpha_rot = alpha_rot
         # Thread-safe data buffers.
         self.pose_buffer = deque(maxlen=max_buffer)
         self.button_buffer = deque(maxlen=max_buffer)
         self.lock = threading.Lock()
+        # Filter states
+        if self.filter:
+            self.filtered_r_pos = None
+            self.filtered_r_quat = None
+            self.filtered_l_pos = None
+            self.filtered_l_quat = None
         # Start data collection thread.
         self.running = True
         self.read_thread = threading.Thread(target=self._read_data)
@@ -53,10 +58,7 @@ class OculusInterface:
     def _read_data(self):
         """
         Continuously read data from OculusReader and store it in buffers.
-        Instead of storing the full 4x4 homogeneous matrix, this function extracts
-        the translation (xyz) and converts the rotation matrix to a quaternion (qx, qy, qz, qw),
-        and stores the combined 7-element vector [x, y, z, qx, qy, qz, qw] in pose_buffer.
-        We only use the 'r' (right-hand) controller's pose.
+        Apply EMA filtering if enabled.
         """
         while self.running:
             poses, buttons = self.oculus.get_transformations_and_buttons()
@@ -64,49 +66,130 @@ class OculusInterface:
                 print("No poses received.")
                 time.sleep(0.1)
                 continue
-            # Get the right-hand controller's pose (4x4 matrix)
-            pose = poses.get("r")
-            if pose is not None:
+
+            # Process right controller
+            pose_r = poses.get("r")
+            tracked_r = pose_r is not None
+            if tracked_r:
                 # Extract translation (position)
-                pos = pose[:3, 3].copy()
-                pos = pos[[2, 0, 1]]
-                pos[0] = -pos[0]
-                pos[1] = -pos[1]
-                # # Extract rotation matrix (upper-left 3x3 block)
-                # oculus_mat = self.rot_mat([-np.pi / 2, 0, np.pi / 2]) @ pose[:3, :3]
-                # # Convert rotation matrix to quaternion (using a helper function, e.g., self.mat2quat)
-                # quat = self.mat2quat(oculus_mat)
-
-                # angles_deg 是度数
-                rot_mat = pose[:3, :3]
-                angles_deg = Rotation.from_matrix(rot_mat).as_euler('xyz', degrees=True)
-                quat = Rotation.from_euler('xyz', angles_deg, degrees=True).as_quat()
-
-
-                quat = quat[[0, 1, 2, 3]]
-                if quat[3] < 0.0:
-                    quat *= -1.0
-                # Combine position and quaternion into a 7-element vector.
-                pose_7d = np.hstack([pos, quat])
-                with self.lock:
-                    self.pose_buffer.append(pose_7d)
-                    # Make a shallow copy of the buttons dictionary.
-                    self.button_buffer.append(buttons.copy() if buttons is not None else {})
+                pos_r = pose_r[:3, 3].copy()
+                pos_r = pos_r[[2, 0, 1]]
+                pos_r[0] = -pos_r[0]
+                pos_r[1] = -pos_r[1]
+                rot_mat_r = pose_r[:3, :3]
+                if self.degree:
+                    euler_r = Rotation.from_matrix(rot_mat_r).as_euler('xyz', degrees=True)
+                    quat_r = Rotation.from_euler('xyz', euler_r, degrees=True).as_quat()
+                else:
+                    euler_r = Rotation.from_matrix(rot_mat_r).as_euler('xyz')
+                    quat_r = Rotation.from_euler('xyz', euler_r).as_quat()
+                quat_r = quat_r[[0, 1, 2, 3]]
+                if quat_r[3] < 0.0:
+                    quat_r *= -1.0
+                pose_7d_r = np.hstack([pos_r, quat_r])
             else:
-                print("Pose for 'r' not found; skipping this sample.")
+                pose_7d_r = np.zeros(7, dtype=np.float32)
+
+            # Process left controller
+            pose_l = poses.get("l")
+            tracked_l = pose_l is not None
+            if tracked_l:
+                pos_l = pose_l[:3, 3].copy()
+                pos_l = pos_l[[2, 0, 1]]
+                pos_l[0] = -pos_l[0]
+                pos_l[1] = -pos_l[1]
+                rot_mat_l = pose_l[:3, :3]
+                if self.degree:
+                    euler_l = Rotation.from_matrix(rot_mat_l).as_euler('xyz', degrees=True)
+                    quat_l = Rotation.from_euler('xyz', euler_l, degrees=True).as_quat()
+                else:
+                    euler_l = Rotation.from_matrix(rot_mat_l).as_euler('xyz')
+                    quat_l = Rotation.from_euler('xyz', euler_l).as_quat()
+                quat_l = quat_l[[0, 1, 2, 3]]
+                if quat_l[3] < 0.0:
+                    quat_l *= -1.0
+                pose_7d_l = np.hstack([pos_l, quat_l])
+            else:
+                pose_7d_l = np.zeros(7, dtype=np.float32)
+
+            # Apply filtering if enabled
+            if self.filter:
+                # Process right controller
+                if tracked_r:
+                    current_r_pos = pose_7d_r[:3]
+                    current_r_quat = pose_7d_r[3:]
+                    if self.filtered_r_pos is None:
+                        self.filtered_r_pos = current_r_pos.copy()
+                        self.filtered_r_quat = current_r_quat.copy()
+                    else:
+                        # EMA for position
+                        self.filtered_r_pos = self.alpha_pos * current_r_pos + (1 - self.alpha_pos) * self.filtered_r_pos
+                        # EMA for quaternion with sign correction
+                        prev_q = self.filtered_r_quat.copy()
+                        curr_q = current_r_quat.copy()
+                        dot_product = np.dot(prev_q, curr_q)
+                        if dot_product < 0.0:
+                            curr_q = -curr_q
+                        interpolated_q = (1 - self.alpha_rot) * prev_q + self.alpha_rot * curr_q
+                        interpolated_q /= np.linalg.norm(interpolated_q)
+                        self.filtered_r_quat = interpolated_q
+                    # Update pose with filtered values
+                    pose_7d_r = np.hstack([self.filtered_r_pos, self.filtered_r_quat])
+
+                # Process left controller
+                if tracked_l:
+                    current_l_pos = pose_7d_l[:3]
+                    current_l_quat = pose_7d_l[3:]
+                    if self.filtered_l_pos is None:
+                        self.filtered_l_pos = current_l_pos.copy()
+                        self.filtered_l_quat = current_l_quat.copy()
+                    else:
+                        # EMA for position
+                        self.filtered_l_pos = self.alpha_pos * current_l_pos + (1 - self.alpha_pos) * self.filtered_l_pos
+                        # EMA for quaternion with sign correction
+                        prev_q = self.filtered_l_quat.copy()
+                        curr_q = current_l_quat.copy()
+                        dot_product = np.dot(prev_q, curr_q)
+                        if dot_product < 0.0:
+                            curr_q = -curr_q
+                        interpolated_q = (1 - self.alpha_rot) * prev_q + self.alpha_rot * curr_q
+                        interpolated_q /= np.linalg.norm(interpolated_q)
+                        self.filtered_l_quat = interpolated_q
+                    # Update pose with filtered values
+                    pose_7d_l = np.hstack([self.filtered_l_pos, self.filtered_l_quat])
+
+            pose_2x7 = np.stack([pose_7d_r, pose_7d_l], axis=0)
+
+            with self.lock:
+                self.pose_buffer.append(pose_2x7)
+                self.button_buffer.append(buttons)
+            
             time.sleep(1.0 / self.hz)
+
+    def reset_filter(self):
+        """Reset the filter states to None."""
+        if self.filter:
+            self.filtered_r_pos = None
+            self.filtered_r_quat = None
+            self.filtered_l_pos = None
+            self.filtered_l_quat = None
+            
+    def flush_buffers(self):
+        """Clear all old samples and keep only the latest one."""
+        with self.lock:
+            if len(self.pose_buffer) > 0:
+                last_pose = self.pose_buffer[-1]
+                self.pose_buffer.clear()
+                self.pose_buffer.append(last_pose)
+            if len(self.button_buffer) > 0:
+                last_buttons = self.button_buffer[-1]
+                self.button_buffer.clear()
+                self.button_buffer.append(last_buttons)
 
     def get_action_delta(self):
         """
-        Get the latest incremental pose change and button state.
-
-        Returns:
-            action: A numpy array with 7 elements [dx, dy, dz, qx, qy, qz, qw],
-                    where the position change is in meters and the rotation is given as a quaternion.
-            buttons: A dictionary of button states.
-
-        If fewer than two samples exist, it uses the last available sample for both previous and current,
-        which results in a zero translation and an identity quaternion (0,0,0,1).
+        返回 (2,7) 的数组，分别为左右手的增量 [dx, dy, dz, qx, qy, qz, qw]，
+        以及与该增量对应的最新 button 状态。
         """
         with self.lock:
             if len(self.pose_buffer) == 0:
@@ -116,43 +199,33 @@ class OculusInterface:
             elif len(self.pose_buffer) < 2:
                 # Only one sample exists; use it for both previous and current.
                 pose_prev = self.pose_buffer[-1].copy()
-                pose_curr = self.pose_buffer[-1]
-                buttons = self.button_buffer[-1].copy() if len(self.button_buffer) > 0 else {}
+                pose_curr = self.pose_buffer[-1].copy()
+                buttons = self.button_buffer[-1].copy()
             else:
                 # Use the two most recent samples.
-                pose_prev = self.pose_buffer[-2]
-                pose_curr = self.pose_buffer[-1]
+                pose_prev = self.pose_buffer[-2].copy()
+                pose_curr = self.pose_buffer[-1].copy()
                 buttons = self.button_buffer[-1].copy()
 
-        # Compute incremental position: difference in the translation part.
-        pos_prev = pose_prev[:3]
-        pos_curr = pose_curr[:3]
-        delta_pos = pos_curr - pos_prev
-        delta_pos *= 1.4
-        # Limit the maximum position change (e.g., 0.1 m per update).
-        delta_pos = np.clip(delta_pos, -0.1, 0.1)
-        
+        # 分别计算右手(0)和左手(1)的增量
+        delta_poses = []
+        for i in range(2):
+            pos_prev = pose_prev[i, :3]
+            pos_curr = pose_curr[i, :3]
+            delta_pos = np.clip(pos_curr - pos_prev, -0.1, 0.1)
 
-        # Compute incremental rotation.
-        quat_prev = pose_prev[3:]
-        quat_curr = pose_curr[3:]
-        # Compute relative rotation as: delta_quat = quat_curr * inverse(quat_prev)
-        delta_quat = self.quat_multiply(quat_curr, self.quat_inverse(quat_prev))
-        
-        # # change some axis
-        # delta_quat = delta_quat[[1, 0, 2 , 3]]
-        # delta_quat[0] = -delta_quat[0]
-        # delta_quat = np.array(list(delta_quat))
-        
-        # if delta_quat[3] < 0.0:
-        #     delta_quat *= -1.0
+            quat_prev = pose_prev[i, 3:]
+            quat_curr = pose_curr[i, 3:]
+            delta_quat = self.quat_multiply(quat_curr, self.quat_inverse(quat_prev))
 
+            delta_poses.append(np.hstack([delta_pos, delta_quat]))
 
-        # Combine position and rotation increments.
-        action = np.hstack([delta_pos, delta_quat])
-        return action.astype(np.float32), buttons
+        return np.stack(delta_poses, axis=0).astype(np.float32), buttons
     
     def get_action(self):
+        """
+        返回 (2,7) 的数组，分别为右手和左手 Pose，以及对应的 buttons。
+        """
         with self.lock:
             if len(self.pose_buffer) == 0:
                 # No pose data available at all.
@@ -171,24 +244,6 @@ class OculusInterface:
         self.oculus.stop()
 
     # --- Helper functions for quaternion and matrix operations ---
-    def rot_mat(self,angles, hom: bool = False):
-        """Given @angles (x, y, z), compute rotation matrix
-        Args:
-            angles: (x, y, z) rotation angles.
-            hom: whether to return a homogeneous matrix.
-        """
-        x, y, z = angles
-        Rx = np.array([[1, 0, 0], [0, np.cos(x), -np.sin(x)], [0, np.sin(x), np.cos(x)]])
-        Ry = np.array([[np.cos(y), 0, np.sin(y)], [0, 1, 0], [-np.sin(y), 0, np.cos(y)]])
-        Rz = np.array([[np.cos(z), -np.sin(z), 0], [np.sin(z), np.cos(z), 0], [0, 0, 1]])
-
-        R = Rz @ Ry @ Rx
-        if hom:
-            M = np.zeros((4, 4), dtype=np.float32)
-            M[:3, :3] = R
-            M[3, 3] = 1.0
-            return M
-        return R
     def quat_multiply(self, q1, q0):
         """
         Multiply two quaternions (order: q1 * q0) where each is (x, y, z, w).
@@ -210,51 +265,6 @@ class OculusInterface:
         """Return the inverse of quaternion q (x, y, z, w)."""
         return self.quat_conjugate(q) / np.dot(q, q)
 
-    def mat2quat(self, rmat):
-        """
-        Convert a 3x3 rotation matrix to a quaternion (x, y, z, w).
-
-        This follows a method similar to the reference implementation.
-        """
-        M = np.asarray(rmat, dtype=np.float32)[:3, :3]
-        m00, m01, m02 = M[0, 0], M[0, 1], M[0, 2]
-        m10, m11, m12 = M[1, 0], M[1, 1], M[1, 2]
-        m20, m21, m22 = M[2, 0], M[2, 1], M[2, 2]
-        # Build symmetric K matrix.
-        K = np.array([
-            [m00 - m11 - m22, 0.0,          0.0,          0.0],
-            [m01 + m10,       m11 - m00 - m22, 0.0,          0.0],
-            [m02 + m20,       m12 + m21,       m22 - m00 - m11, 0.0],
-            [m21 - m12,       m02 - m20,       m10 - m01,       m00 + m11 + m22]
-        ], dtype=np.float32)
-        K /= 3.0
-        # Eigen-decomposition; the quaternion is the eigenvector corresponding to the largest eigenvalue.
-        w, V = np.linalg.eigh(K)
-        inds = np.array([3, 0, 1, 2])
-        q = V[inds, np.argmax(w)]
-        if q[0] < 0.0:
-            q = -q
-        inds = np.array([1, 2, 3, 0])
-        return q[inds]
-
-    def quat_to_euler(self, q):
-        """
-        Convert a quaternion (x, y, z, w) to Euler angles (roll, pitch, yaw) in degrees.
-        Uses the standard Tait-Bryan angles (x-y-z convention).
-        """
-        x, y, z, w = q
-        # Roll (x-axis rotation)
-        sinr_cosp = 2 * (w * x + y * z)
-        cosr_cosp = 1 - 2 * (x * x + y * y)
-        roll = math.atan2(sinr_cosp, cosr_cosp)
-        # Pitch (y-axis rotation)
-        sinp = 2 * (w * y - z * x)
-        pitch = math.asin(max(-1.0, min(1.0, sinp)))
-        # Yaw (z-axis rotation)
-        siny_cosp = 2 * (w * z + x * y)
-        cosy_cosp = 1 - 2 * (y * y + z * z)
-        yaw = math.atan2(siny_cosp, cosy_cosp)
-        return np.array([math.degrees(roll), math.degrees(pitch), math.degrees(yaw)], dtype=np.float32)
 
 # --- Test code mapping the increments to a robot target state ---
 def main():
@@ -278,25 +288,11 @@ def main():
             # Get the incremental action and button state.
             # action is [dx, dy, dz, qx, qy, qz, qw]
             action, buttons = oculus_interface.get_action()
-            delta_pos = action[:3]
-            delta_quat = action[3:]
-            
-            # Convert robot euler(degrees) to quaternion
-            robot_quart = Rotation.from_euler('xyz', robot_euler, degrees=True).as_quat()
-            
-            # Map the increments onto the robot's target state.
-            robot_target_position = robot_position + delta_pos
-            robot_target_quart = oculus_interface.quat_multiply(robot_quart,delta_quat)
-            robot_targrt_euler = Rotation.from_quat(robot_target_quart).as_euler('xyz', degrees=True)
-            print("Increment:")
-            print("  Position change (meters):", delta_pos)
-            print("  Rotation change (degrees):", delta_quat)
-            print("Updated Robot Target State:")
-            print("  Position (meters):", robot_target_position)
-            print("  Rotation (degrees):", robot_targrt_euler)
-            print("Button states:", buttons)
-            print("-----------------------------------------------------")
-            
+            print("action:", action)
+            print("buttons:", buttons)
+            delta_action, buttons = oculus_interface.get_action_delta()
+            print("delta_action:", delta_action)
+            print("buttons:", buttons)
             time.sleep(0.1)  # Loop at approximately 10 Hz.
     except KeyboardInterrupt:
         print("Program terminated by user.")

@@ -29,14 +29,14 @@ from scipy.spatial.transform import Rotation as R
 import math
 
 @click.command()
-@click.option('--output', '-o', default = 'data/our_collected_data/test', help="Directory to save demonstration dataset.")
+@click.option('--output', '-o', default = 'data/our_collected_data/pickplace_v4', help="Directory to save demonstration dataset.")
 @click.option('--can_interface', '-c', default='can_piper', help="CAN interface to use.")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SapceMouse command to executing on Robot in Sec.")
 def main(output, can_interface, vis_camera_idx, frequency, command_latency):
     dt = 1/frequency
-    oculus_interface = OculusInterface(oculus_reader=OculusReader())
+    oculus_interface = OculusInterface(oculus_reader=OculusReader(),degree=True,filter=True)
     magnet_state = False
     last_magnet_state = False
     bt_port='/dev/rfcomm0'
@@ -129,13 +129,12 @@ def main(output, can_interface, vis_camera_idx, frequency, command_latency):
 
                 cv2.imshow('default', vis_img)
                 cv2.pollKey()
-
+ 
                 precise_wait(t_sample)
                 # get teleop command
-                action, buttons = oculus_interface.get_action()   
+                actions, buttons = oculus_interface.get_action_delta()
                 A_button = buttons.get("A", [0])
                 right_trigger = buttons.get("rightTrig", [0])[0]
-                print('action:', action)
                 # 判断是否按下A键，按下A，机械臂允许移动
                 #---------------------------------------------------
                 if A_button:
@@ -145,10 +144,9 @@ def main(output, can_interface, vis_camera_idx, frequency, command_latency):
                 #----------------------------------------------------
                 if freeze:
                     target_pose = env.get_robot_state()['ActualTCPPose']
-                    print('freeze')
-                    print('target_pose:', target_pose)
                 else:
-                    action, buttons = oculus_interface.get_action() 
+                    actions, buttons = oculus_interface.get_action_delta()
+                    action = actions[0]
                     delta_pos = action[:3]
                     delta_quat = action[3:]
                     scale = 10

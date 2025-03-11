@@ -59,10 +59,11 @@ def update_actions_and_poses(data):
     updated_robot_eef_pose = []
     for pose in robot_eef_pose:
         position = pose[:3]
-        euler_angles = pose[3:]
+        euler_angles = pose[3:6]
+        magnet_state = pose[6]
         
         # Transform Euler angles to 6D
-        rotation_6d = transform_to_rotation_6d(euler_angles, is_rotation_vector=False)
+        rotation_6d = transform_to_rotation_6d(euler_angles, is_rotation_vector=True)
         
         # Update to new 9D pose: position + 6D rotation
         updated_robot_eef_pose.append(np.concatenate([position, rotation_6d]))
@@ -104,5 +105,5 @@ def main(base_path):
     print("Transformation and saving completed.")
 
 if __name__ == "__main__":
-    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/clean_mark_v5'  # Update this to the actual base path
+    base_path = '/home/zcai/jh_workspace/diffusion_policy/data/our_collected_data/test2'  # Update this to the actual base path
     main(base_path)

@@ -154,7 +154,7 @@ class PiperRealEnv:
             can_interface=can_interface,
             bt_port=bt_port,
             bt_baud_rate=baud_rate,
-            frequency=200,  # Adjusted frequency for Piper
+            frequency=250,  # Adjusted frequency for Piper
             max_pos_speed=max_pos_speed*cube_diag,
             max_rot_speed=max_rot_speed*cube_diag,
             launch_timeout=5,
@@ -329,7 +329,6 @@ class PiperRealEnv:
             )
 
         # record actions
-        print('new_actions:', new_actions)
         if self.action_accumulator is not None:
             self.action_accumulator.put(
                 new_actions,
